@@ -1,0 +1,72 @@
+
+# Ignore all .txt files
+*.txt
+
+# But DO NOT ignore ips.txt
+!ips.txt
+
+# ------------------------------------
+# Go build files
+# ------------------------------------
+/bin/
+/build/
+/dist/
+/out/
+/coverage/
+/tmp/
+
+# Compiled binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+
+# Go modules
+/go.sum
+/vendor/
+
+# Logs
+*.log
+
+# Dependency directories
+pkg/
+**/pkg/
+
+# Local environment files
+.env
+*.local
+
+# ------------------------------------
+# IDE / Editor ignores
+# ------------------------------------
+
+# VSCode
+.vscode/
+.history/
+
+# JetBrains IDEs (GoLand, IntelliJ IDEA, etc.)
+.idea/
+*.iml
+out/
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*.vim
+
+# Emacs
+*~
+\#*\#
+.\#*
+
+# MacOS
+.DS_Store
+
+# Windows
+Thumbs.db
