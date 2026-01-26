@@ -1,6 +1,6 @@
-<div dir="rtl">
 # bgscan — Fast IP Scanner
 
+<div dir="rtl">
 `bgscan` یک ابزار سریع، سبک و تعاملی برای اسکن لیست IP‌ها با استفاده از **TCP**, **ICMP** یا **HTTP** است.  
 این ابزار به‌صورت فایل اجرایی آماده (precompiled) ارائه می‌شود و نیازی به build یا نصب Go ندارد.
 
@@ -159,5 +159,3 @@ GitHub: https://github.com/MohsenBg
 MIT License — free to use, modify, and distribute.
 
 </div>
-
-اگر دوست داری، می‌تونم نسخه‌ی انگلیسی RTL-free هم در انتهای README اضافه کنم یا یک Table of Contents خودکار بسازم.
