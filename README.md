@@ -1,94 +1,90 @@
 # bgscan — Fast IP Scanner
 
-<div dir="rtl">
-`bgscan` یک ابزار سریع، سبک و تعاملی برای اسکن لیست IP‌ها با استفاده از **TCP**, **ICMP** یا **HTTP** است.  
-این ابزار به‌صورت فایل اجرایی آماده (precompiled) ارائه می‌شود و نیازی به build یا نصب Go ندارد.
+`bgscan` is a fast, lightweight, and interactive tool for scanning lists of IPs using **TCP**, **ICMP**, or **HTTP**.  
+It’s distributed as a precompiled executable—**no Go install or build required**.
 
-کافی است فایل را دانلود و اجرا کنید.
+Just download and run.
 
 ---
 
-### ویژگی‌ها
+### Features
 
-- پشتیبانی از 3 حالت اسکن:
-  - **TCP** (پیشنهادی – بدون نیاز به دسترسی خاص)
-  - **ICMP** (ping واقعی – نیازمند دسترسی root یا قابلیت `CAP_NET_RAW`)
-  - **HTTP** (بررسی وب‌سرورها با `Host` header دلخواه)
-- رابط کاربری کاملاً تعاملی (CLI)
-- کنترل کامل روی:
+- Supports 3 scan modes:
+  - **TCP** (Recommended – no special permissions required)
+  - **ICMP** (real ping – requires root privileges or `CAP_NET_RAW` capability)
+  - **HTTP** (scan web servers with custom `Host` header)
+- Fully interactive CLI interface
+- Complete control over:
   - Threads
   - Timeout
   - Port
   - Shuffle IPs
   - Stop after N successes
   - Verbose mode
-- اجرای Memory‑Safe برای اسکن لیست‌های بزرگ IP
-- خروجی قابل ذخیره با پیشوند دلخواه
+- Memory‑safe execution for large IP lists
+- Save output with custom prefix
 
----
 
-## دانلود و اجرا (بدون Build)
+## Download & Run (No Build Needed)
 
-فایل اجرایی مناسب سیستم‌عامل خود را از بخش Releases دانلود کنید:
+Download the executable for your operating system from the Releases page:
 
 Releases:  
 https://github.com/MohsenBg/bgscaner/releases
 
-### لینوکس / macOS
+### Linux / macOS
 
 ```bash
 chmod +x bgscan
 ./bgscan
 ```
 
-### ویندوز
+### Windows
 
 ```powershell
 bgscan.exe
 ```
 
-هیچ نیازی به نصب Go یا اجرای `go build` نیست.
+No Go installation or `go build` required.
 
----
 
-## نحوه استفاده
+## Usage
 
-پس از اجرا، برنامه به‌صورت مرحله‌ای از شما تنظیمات را می‌پرسد:
+After starting, the app interactively asks for your configuration:
 
-1. انتخاب نوع اسکن
-   - TCP → سریع و بدون دسترسی خاص
-   - ICMP → نیازمند دسترسی root
-     - اجرای برنامه با root
-     - یا ست کردن capability:
+1. **Choose scan type**
+   - **TCP**: Fast, no special permissions
+   - **ICMP**: Needs root
+     - Run as root
+     - Or set capability:
        ```bash
        sudo setcap cap_net_raw+ep bgscan
        ```
-     - اگر دسترسی وجود نداشته باشد، برنامه به‌صورت خودکار به حالت TCP برمی‌گردد (fallback).
-   - HTTP → مناسب اسکن وب‌سرورها
+     - If permission is missing, falls back to TCP automatically.
+   - **HTTP**: For scanning web servers
 
-2. تنظیمات اسکن
-   - تعداد Threads
-   - Timeout برای هر IP
-   - شماره پورت
-   - مسیر فایل IPها
-   - فعال/غیرفعال کردن shuffle
-   - محدود کردن تعداد IPهای تست‌شده
-   - خروجی با پیشوند دلخواه
+2. **Configure scan settings**
+   - Number of threads
+   - Timeout per IP
+   - Port number
+   - IP list file path
+   - Shuffle on/off
+   - Limit scanned IP count
+   - Output file prefix
 
-3. شروع خودکار اسکن  
-   بعد از اتمام تنظیمات، اسکن بلافاصله شروع می‌شود.
+3. **Automatic scan start**  
+   Scan starts immediately once configuration is complete.
 
----
 
-## فایل IP‌ها
+## IP List File
 
-به‌صورت پیش‌فرض، برنامه فایل زیر را می‌خواند:
+By default, the tool reads from:
 
 ```
 ips.txt
 ```
 
-فرمت فایل:
+Example file format:
 
 ```
 8.8.8.8
@@ -96,66 +92,59 @@ ips.txt
 192.168.1.1
 ```
 
-می‌توانید مسیر فایل را هنگام اجرا تغییر دهید.
+You can specify a different path at runtime.
 
----
 
-## حالت HTTP
+## HTTP Mode
 
-- ارسال درخواست HTTP
-- پشتیبانی از `Host` header سفارشی
-- مناسب بررسی CDN و Virtual Hostها
+- Sends HTTP requests
+- Supports custom `Host` header
+- Useful for CDN and Virtual Host checking
 
----
 
-## خروجی برنامه
+## Output
 
-- IPهای موفق در ترمینال نمایش داده می‌شوند.
-- نتایج در فایل ذخیره می‌شوند با فرمت:
+- Successful IPs are printed to terminal.
+- Results are saved to a file in the format:
 
 ```
 <output_prefix>_success.txt
 ```
 
-مثال:
+Example:
 ```
 results_success.txt
 ```
 
----
 
-## ساختار داخلی (برای توسعه‌دهندگان)
+## Internal Structure (for Developers)
 
 ```
 bgscan/
- ┣ input/     # دریافت ورودی تعاملی
- ┣ pinger/    # منطق TCP / ICMP / HTTP ping
- ┣ scanner/   # مدیریت اسکن و همزمانی (concurrency)
- ┣ main.go    # CLI و جریان اصلی برنامه
+ ┣ input/     # Interactive input handling
+ ┣ pinger/    # TCP / ICMP / HTTP ping logic
+ ┣ scanner/   # Scan management and concurrency
+ ┣ main.go    # CLI and main program flow
 ```
 
+
+## Legal Disclaimer
+
+This tool is intended **only** for use on:
+- Your own systems
+- Your own networks
+- Or with proper authorization
+
+Unauthorized use may violate network laws.
+
 ---
 
-## هشدار قانونی
-
-این ابزار فقط برای استفاده روی:
-- سیستم‌های شخصی
-- شبکه‌هایی که مالک آن هستید
-- یا با اجازه رسمی
-
-استفاده غیرمجاز ممکن است خلاف قوانین شبکه باشد.
-
----
-
-## نویسنده
+## Author
 
 Developed by MohsenBg  
 GitHub: https://github.com/MohsenBg
 
----
 
 ## License
 
 MIT License — free to use, modify, and distribute.
-
-</div>
