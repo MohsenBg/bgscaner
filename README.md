@@ -5,6 +5,8 @@ It’s distributed as a precompiled executable—**no Go install or build requir
 
 Just download and run.
 
+[bgscan](./image/bgscan.png)
+
 ---
 
 ### Features
