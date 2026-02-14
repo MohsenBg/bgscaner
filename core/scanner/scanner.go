@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"bgscan/pinger"
+	"bgscan/core/pinger"
 )
 
 // ScannerConfig defines all settings for the scanner.

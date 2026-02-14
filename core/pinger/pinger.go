@@ -178,4 +178,3 @@ func CanUseICMP() bool {
 	conn.Close()
 	return true
 }
-
