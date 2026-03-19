@@ -1,0 +1,13 @@
+package targetsource
+
+import (
+	"bgscan/internal/ui/shared/ui"
+
+	tea "github.com/charmbracelet/bubbletea"
+)
+
+func (m *Model) Update(msg tea.Msg) (ui.Component, tea.Cmd) {
+	var cmd tea.Cmd
+	m.menu, cmd = m.menu.Update(msg)
+	return m, cmd
+}

@@ -1,0 +1,26 @@
+# Interval in milliseconds for sending progress updates to the UI.
+# The scanner runs in the background and periodically reports its status
+# (for example: how many IPs have been processed, progress, statistics).
+# Example: 1000 = update UI every 1 second.
+status_interval = 1000
+
+# Stop scanning after this many successful results are found.
+# A successful result means a target passed the scan conditions.
+# Once this number is reached, the scanner stops reading new IPs
+# and terminates the scan.
+# Set to 0 to disable this behavior.
+stop_after_found = 0
+
+# Limits how many IPs are read from the input source.
+# The scanner will only read and test this many IPs from the input file
+# even if the file contains more.
+# Useful for testing or sampling large IP lists.
+# Set to 0 to read and test all IPs.
+max_ips_to_test = 0
+
+# Enable verbose debugging output.
+# When enabled, the scanner logs detailed internal activity
+# such as scan attempts, decisions, and internal events.
+# Mainly useful for debugging and development.
+verbose = false
+

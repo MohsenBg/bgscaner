@@ -2,8 +2,6 @@
 # Ignore all .txt files
 *.txt
 
-# But DO NOT ignore ips.txt
-!ips.txt
 
 # ------------------------------------
 # Go build files
@@ -73,6 +71,14 @@ Thumbs.db
 
 
 # project
-[Tt]mp
-[Ll]ogs/
+/[Tt]mp
+/[Ll]ogs
+/ips
+/result
+
+# assets 
+assets/xray/xray
+assets/xray/templates/*
+assets/xray/configs/*
+__debug_bin*
 
