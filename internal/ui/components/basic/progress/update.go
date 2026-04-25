@@ -24,11 +24,16 @@ func (m *Model) Update(msg tea.Msg) (ui.Component, tea.Cmd) {
 
 	// External progress update
 	case UpdateProgressMsg:
+		if msg.ID != m.ID() {
+			return m, nil
+		}
 		// When progress reaches completion, switch to a cleaner format
-		if msg.Progress == 1 {
+		if msg.Progress >= 1 {
 			m.progress.PercentFormat = " %3.0f%%"
+			return m, m.progress.SetPercent(1)
 		}
 
+		m.progress.PercentFormat = " %0.2f%%"
 		return m, m.progress.SetPercent(msg.Progress)
 
 	// progress.FrameMsg is emitted internally by the progress model
@@ -46,4 +51,3 @@ func (m *Model) Update(msg tea.Msg) (ui.Component, tea.Cmd) {
 
 	return m, nil
 }
-

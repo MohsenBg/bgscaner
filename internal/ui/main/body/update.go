@@ -36,7 +36,7 @@ func (m *Model) Update(msg tea.Msg) (ui.Component, tea.Cmd) {
 		for i, c := range m.components {
 			if c.ID() == msg.ID {
 				cmd := c.OnClose()
-				m.components[i] = nil // GC: Avoid memory leak
+				m.components[i] = nil
 				m.components = append(m.components[:i], m.components[i+1:]...)
 				return m, cmd
 			}
@@ -67,6 +67,7 @@ func (m *Model) pushComponent(c ui.Component) (ui.Component, tea.Cmd) {
 
 	return m, tea.Batch(
 		c.Init(),
+		m.forceResize(),
 		m.updateStatusCmd(c.Name()),
 	)
 }
@@ -91,5 +92,14 @@ func (m *Model) popComponent() (ui.Component, tea.Cmd) {
 func (m *Model) updateStatusCmd(name string) tea.Cmd {
 	return func() tea.Msg {
 		return footer.UpdateStatus{Status: name}
+	}
+}
+
+func (m *Model) forceResize() tea.Cmd {
+	return func() tea.Msg {
+		return tea.WindowSizeMsg{
+			Width:  m.layout.Terminal.Width,
+			Height: m.layout.Terminal.Height,
+		}
 	}
 }

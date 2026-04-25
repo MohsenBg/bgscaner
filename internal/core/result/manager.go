@@ -1,67 +1,44 @@
 package result
 
 import (
-	"bufio"
+	"bgscan/internal/core/filemanager"
+	"bgscan/internal/logger"
 	"context"
-	"encoding/csv"
-	"os"
 	"sync"
 	"time"
 )
 
-// Writer provides a concurrent-safe result writer for IP scan results.
+// Writer asynchronously aggregates IPScanResult items and merges them into the
+// final result file. It operates as a background worker that periodically
+// flushes accumulated results based on configurable policies.
 //
-// Architecture overview:
+// Flushing occurs when:
+//   - The accumulated batch reaches BatchSize
+//   - MergeFlushInterval elapses
+//   - Shutdown begins (Stop)
 //
-//	Scanner Workers
-//	      │
-//	      ▼
-//	  channel buffer
-//	      │
-//	      ▼
-//	  delta file (append-only log)
-//	      │
-//	      ▼
-//	 periodic snapshot
-//	      │
-//	      ▼
-//	 merge into result file
-//
-// Results are first appended to a temporary delta file to avoid expensive
-// rewrites of the final result file. Periodically the delta file is turned
-// into a snapshot and merged into the main result file.
-//
-// This design allows high-throughput writes while keeping disk IO efficient
-// and crash-safe.
+// Writer guarantees that any result successfully written to the input channel
+// before shutdown will be flushed to disk before Stop() returns.
 type Writer struct {
 	config Config
 
-	// protects access to file writers
-	mu sync.Mutex
-
-	// lifecycle management
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 
-	// delta file components
-	deltaFile   *os.File
-	deltaWriter *bufio.Writer
-	deltaCSV    *csv.Writer
-	deltaPath   string
-
-	// final result file path
 	resultPath string
 
-	// incoming scan results
 	input chan IPScanResult
+
+	batch     []IPScanResult
+	batchSize int
 }
 
-// NewWriter initializes a new result writer.
+// NewWriter initializes an asynchronous result writer tied to the given
+// context. If ctx is nil, context.Background() is used.
 //
-// The writer maintains an internal delta file where new scan results
-// are appended. Periodically the delta file will be merged into the
-// final result file.
+// The returned Writer is not started automatically; the caller must invoke
+// Start() to launch its background goroutine.
 func NewWriter(resultPath string, cfg Config, ctx context.Context) (*Writer, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -69,54 +46,43 @@ func NewWriter(resultPath string, cfg Config, ctx context.Context) (*Writer, err
 
 	cfg.Normalize()
 
-	deltaFile, bw, cw, deltaPath, err := createDeltaFile(resultPath, cfg.BufferSize)
-	if err != nil {
-		return nil, err
-	}
-
 	ctx, cancel := context.WithCancel(ctx)
 
 	return &Writer{
-		config:      cfg,
-		resultPath:  resultPath,
-		deltaFile:   deltaFile,
-		deltaWriter: bw,
-		deltaCSV:    cw,
-		deltaPath:   deltaPath,
-		ctx:         ctx,
-		cancel:      cancel,
-		input:       make(chan IPScanResult, cfg.ChanSize),
+		config:     cfg,
+		resultPath: resultPath,
+		input:      make(chan IPScanResult, cfg.ChanSize),
+		batchSize:  cfg.BatchSize,
+		batch:      make([]IPScanResult, 0, cfg.BatchSize),
+		ctx:        ctx,
+		cancel:     cancel,
 	}, nil
 }
 
-// Start launches background workers responsible for writing results
-// and periodically merging delta snapshots.
+// Start launches the background processing goroutine.
+//
+// Safe to call exactly once. After Start, the Writer begins accepting and
+// flushing results asynchronously.
 func (w *Writer) Start() {
-	// clean up snapshots
-	w.cleanupSnapshot()
-	w.wg.Add(2)
-
+	w.wg.Add(1)
 	go w.writeLoop()
-	go w.mergeLoop()
 }
 
-// Stop gracefully shuts down the writer.
+// Stop gracefully shuts down the Writer. It cancels the internal context,
+// drains the input channel, flushes any remaining batch, and waits for the
+// background goroutine to exit.
 //
-// Shutdown procedure:
-//   - cancel context
-//   - drain remaining results
-//   - flush buffers
-//   - close files
-//   - wait for workers
+// Stop guarantees all previously submitted results are persisted.
 func (w *Writer) Stop() error {
 	w.cancel()
 	w.wg.Wait()
 	return nil
 }
 
-// Write queues a scan result for asynchronous writing.
+// Write submits a result to the Writer. If the writer is already shutting down,
+// the result is silently dropped to avoid blocking.
 //
-// If the writer is shutting down the result is ignored.
+// Writes are non‑blocking thanks to the buffered input channel.
 func (w *Writer) Write(r IPScanResult) {
 	select {
 	case <-w.ctx.Done():
@@ -125,32 +91,9 @@ func (w *Writer) Write(r IPScanResult) {
 	}
 }
 
-// writeLoop consumes incoming results and writes them to the delta file.
-// It also periodically flushes buffers for durability.
+// writeLoop is the main worker goroutine that handles batching and periodic
+// flushing. It reacts to incoming results, timer ticks, and shutdown signals.
 func (w *Writer) writeLoop() {
-	defer w.wg.Done()
-
-	ticker := time.NewTicker(w.config.DeltaFlushInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-
-		case r := <-w.input:
-			w.appendRecord(r)
-
-		case <-ticker.C:
-			w.flushBuffers()
-
-		case <-w.ctx.Done():
-			w.drainAndClose()
-			return
-		}
-	}
-}
-
-// mergeLoop periodically merges delta snapshots into the main result file.
-func (w *Writer) mergeLoop() {
 	defer w.wg.Done()
 
 	ticker := time.NewTicker(w.config.MergeFlushInterval)
@@ -159,97 +102,66 @@ func (w *Writer) mergeLoop() {
 	for {
 		select {
 
-		case <-w.ctx.Done():
-			return
+		case r := <-w.input:
+			w.batch = append(w.batch, r)
+			if len(w.batch) >= w.batchSize {
+				_ = w.flush()
+			}
 
 		case <-ticker.C:
-			_ = w.mergeOnce()
+			_ = w.flush()
+
+		case <-w.ctx.Done():
+			// On shutdown:
+			//   1. Drain remaining buffered results
+			//   2. Flush everything
+			w.drain()
+			_ = w.flush()
+			return
 		}
 	}
 }
 
-// appendRecord writes a single result record into the delta CSV file.
-func (w *Writer) appendRecord(r IPScanResult) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	_ = w.deltaCSV.Write(r.ToRecord())
-}
-
-// flushBuffers flushes all buffered data to disk.
-func (w *Writer) flushBuffers() {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	w.deltaCSV.Flush()
-	_ = w.deltaWriter.Flush()
-	_ = w.deltaFile.Sync()
-}
-
-// drainAndClose drains remaining results before shutting down.
-func (w *Writer) drainAndClose() {
+// drain empties the input channel without blocking. Called only during
+// shutdown to ensure no queued item is lost.
+func (w *Writer) drain() {
 	for {
 		select {
 		case r := <-w.input:
-			w.appendRecord(r)
+			w.batch = append(w.batch, r)
 		default:
-			// convert remaining delta to snapshot
-			if snap, err := w.createSnapshot(); err == nil && snap != "" {
-				_ = mergeSnapshot(w.resultPath, snap)
-			}
-
-			// close delta
-			w.closeFile()
-
-			// merge any remaining snapshots
-			for {
-				snap, _ := findOldestSnapshot(w.deltaPath)
-				if snap == "" {
-					break
-				}
-				_ = mergeSnapshot(w.resultPath, snap)
-			}
 			return
 		}
 	}
 }
 
-// closeFile safely flushes and closes the delta file.
-func (w *Writer) closeFile() {
-	w.mu.Lock()
-	defer w.mu.Unlock()
+// flush writes the current batch of results to disk using mergeResults.
+// The batch slice is reset afterward.
+//
+// Errors are logged through logger.DebugError but also returned to the caller.
+func (w *Writer) flush() error {
+	if len(w.batch) == 0 {
+		return nil
+	}
 
-	w.deltaCSV.Flush()
-	_ = w.deltaWriter.Flush()
-	_ = w.deltaFile.Sync()
-	_ = w.deltaFile.Close()
+	batch := w.batch
+	w.batch = make([]IPScanResult, 0, w.batchSize)
 
-	os.Remove(w.deltaPath)
+	err := mergeResults(w.resultPath, batch)
+	if err != nil {
+		logger.DebugError("%s", err.Error())
+	}
+
+	return err
 }
 
-// mergeOnce executes a single merge cycle.
-func (w *Writer) mergeOnce() error {
-
-	// if snapshot already exists merge it first
-	if snap, _ := findOldestSnapshot(w.deltaPath); snap != "" {
-		return mergeSnapshot(w.resultPath, snap)
+// GetResultPath returns the final result file path, but only if the file
+// currently exists. Otherwise an empty string is returned.
+//
+// This is useful for callers who want to verify that output has been produced.
+func (w *Writer) GetResultPath() string {
+	if filemanager.CheckFileExists(w.resultPath) {
+		return w.resultPath
 	}
-
-	// otherwise create a snapshot from current delta file
-	snapshotPath, err := w.createSnapshot()
-	if err != nil || snapshotPath == "" {
-		return err
-	}
-
-	return mergeSnapshot(w.resultPath, snapshotPath)
-}
-
-func (w *Writer) cleanupSnapshot() {
-	for {
-		snap, _ := findOldestSnapshot(w.deltaPath)
-		if snap == "" {
-			break
-		}
-		os.Remove(snap)
-	}
+	return ""
 }

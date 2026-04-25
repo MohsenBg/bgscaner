@@ -1,5 +1,7 @@
 package xray
 
+import "time"
+
 // XrayConfig represents the root configuration structure used to
 // generate an Xray-core configuration file.
 //
@@ -26,7 +28,7 @@ type XrayConfig struct {
 // instance.
 type Inbound struct {
 	// Port is the TCP port the inbound listens on.
-	Port int `json:"port"`
+	Port uint16 `json:"port"`
 
 	// Listen defines the IP address the inbound binds to.
 	// For security reasons bgscan restricts this to localhost.
@@ -70,4 +72,10 @@ type SniffingSetting struct {
 	// DestOverride specifies which protocols should override
 	// the destination address after detection.
 	DestOverride []string `json:"destOverride"`
+}
+
+type XrayOutboundsFile struct {
+	Name        string    // File name (without extension).
+	CreatedTime time.Time // File modification or creation timestamp.
+	Path        string    // Absolute filesystem path to the file.
 }

@@ -10,7 +10,7 @@ package xray
 // Sniffing is enabled with HTTP and TLS destination overrides so that
 // Xray can correctly detect protocols even when the target service
 // does not explicitly specify them.
-func getInbound(port int) Inbound {
+func getInbound(port uint16) Inbound {
 	return Inbound{
 		Port:     port,
 		Listen:   "127.0.0.1",

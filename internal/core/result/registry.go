@@ -13,10 +13,13 @@ import (
 //
 // Each directory stores CSV files produced by a specific scan engine.
 const (
-	ICMPResultDir = "result/icmp/"
-	TCPResultDir  = "result/tcp/"
-	HTTPResultDir = "result/http/"
-	XRAYResultDir = "result/xray/"
+	ICMPResultDir       = "result/icmp/"
+	TCPResultDir        = "result/tcp/"
+	HTTPResultDir       = "result/http/"
+	XRAYResultDir       = "result/xray/"
+	ResolveResultDir    = "result/resolve/"
+	DNSTTResultDir      = "result/dnstt/"
+	SlipStreamResultDir = "result/slipstream/"
 )
 
 // ListResultFiles returns metadata for all result CSV files matching
@@ -119,6 +122,12 @@ func ResultTypeFromPath(path string) ResultType {
 		return ResultTCP
 	case strings.Contains(path, HTTPResultDir):
 		return ResultHTTP
+	case strings.Contains(path, ResolveResultDir):
+		return ResultRESOLVE
+	case strings.Contains(path, DNSTTResultDir):
+		return ResultDNSTT
+	case strings.Contains(path, SlipStreamResultDir):
+		return ResultSLIPSTREAM
 	case strings.Contains(path, XRAYResultDir):
 		return ResultXRAY
 	default:
@@ -152,6 +161,9 @@ func resolveResultDirs(searchType ResultType) []resultDir {
 		{TCPResultDir, ResultTCP},
 		{HTTPResultDir, ResultHTTP},
 		{XRAYResultDir, ResultXRAY},
+		{DNSTTResultDir, ResultDNSTT},
+		{SlipStreamResultDir, ResultSLIPSTREAM},
+		{ResolveResultDir, ResultRESOLVE},
 	}
 
 	if searchType == ResultAll {
@@ -178,6 +190,12 @@ func resolveDir(rType ResultType) string {
 		return HTTPResultDir
 	case ResultXRAY:
 		return XRAYResultDir
+	case ResultRESOLVE:
+		return ResolveResultDir
+	case ResultDNSTT:
+		return DNSTTResultDir
+	case ResultSLIPSTREAM:
+		return SlipStreamResultDir
 	default:
 		return ""
 	}
@@ -193,7 +211,7 @@ func resolveDir(rType ResultType) string {
 // The prefix typically identifies the scan target or configuration.
 func BuildResultFilePath(resultDir, prefix string) (string, error) {
 	switch resultDir {
-	case ICMPResultDir, TCPResultDir, HTTPResultDir, XRAYResultDir:
+	case ICMPResultDir, TCPResultDir, HTTPResultDir, XRAYResultDir, DNSTTResultDir, ResolveResultDir, SlipStreamResultDir:
 		// valid directory
 	default:
 		return "", fmt.Errorf("invalid result directory")
@@ -208,4 +226,3 @@ func BuildResultFilePath(resultDir, prefix string) (string, error) {
 
 	return filepath.Join(resultDir, filename), nil
 }
-

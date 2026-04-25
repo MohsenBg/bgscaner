@@ -7,219 +7,244 @@ import (
 	"bgscan/internal/core/scanner/engine"
 	"bgscan/internal/ui/components/basic/progress"
 	"bgscan/internal/ui/components/basic/table"
+	"bgscan/internal/ui/components/basic/tabs"
 	"bgscan/internal/ui/components/menus/ipviewer"
 	"bgscan/internal/ui/shared/env"
 	"bgscan/internal/ui/shared/layout"
 	"bgscan/internal/ui/shared/ui"
-
 	"sort"
 	"sync"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
-// tickMsg is sent periodically to update UI state.
-type tickMsg struct{}
-
-// ScannerStatus represents the lifecycle state of the scanner.
-type ScannerStatus string
+type StageStatus int
 
 const (
-	StatusPreProcess ScannerStatus = "PreProcess"
-	StatusStart      ScannerStatus = "Start"
-	StatusScanning   ScannerStatus = "Scanning"
-	StatusEnded      ScannerStatus = "Ended"
-	StatusError      ScannerStatus = "Error"
+	StatusWaiting StageStatus = iota
+	StatusPreProcess
+	StatusScanning
+	StatusEnded
+	StatusError
 )
 
-// Model implements the scanning UI component.
-//
-// Responsibilities:
-//   - Run the background scanner engine
-//   - Collect scan results safely from goroutines
-//   - Periodically merge results into the UI state
-//   - Maintain progress and scanner status
 type Model struct {
+	// UI
 	id     ui.ComponentID
 	name   string
 	layout *layout.Layout
+	tabs   ui.Component
 
-	// Scanner engine
-	scanner scanner.Scanner
-	maxIPs  int
+	// Scanner
+	scn        *scanner.Scanner
+	stages     []scanner.StageConfig
+	stageCount int
+	maxIPs     int
 
-	// UI components
-	progress  ui.Component
-	ipViewer  ui.Component
-	logViewer ui.Component
+	// Per-stage UI
+	progress   []ui.Component
+	ipViewers  []ui.Component
+	currentTab int
 
-	// Results state
-	ips []result.IPScanResult
+	// Results
+	results [][]result.IPScanResult
+	batch   [][]result.IPScanResult
 
-	// ---- Concurrency (scanner → UI bridge) ----
+	// State
 	mu           sync.Mutex
-	batch        []result.IPScanResult
-	progressInfo engine.Progress
-
-	status    ScannerStatus
-	scanError error
+	status       []StageStatus
+	progressInfo []engine.Progress
+	scanError    error
 }
 
-// New creates a new Scanner component.
-func New(layout *layout.Layout, maxIPs int, scannerObj scanner.Scanner) *Model {
+func New(layout *layout.Layout, maxIPs int, scn *scanner.Scanner) *Model {
+	stages := scn.GetStages()
+	n := len(stages)
 
-	mode := ipviewer.ShortView
-	if scanner.XRAY_SCAN == scannerObj.Mode() {
-		mode = ipviewer.FullView
+	m := &Model{
+		id:           ui.NewComponentID(),
+		name:         "Scanner",
+		layout:       layout,
+		scn:          scn,
+		stages:       stages,
+		stageCount:   n,
+		maxIPs:       maxIPs,
+		progress:     make([]ui.Component, n),
+		ipViewers:    make([]ui.Component, n),
+		results:      make([][]result.IPScanResult, n),
+		batch:        make([][]result.IPScanResult, n),
+		status:       make([]StageStatus, n),
+		progressInfo: make([]engine.Progress, n),
 	}
 
-	ipViewer := ipviewer.New(layout, "IP Result Scan", []result.IPScanResult{}, mode)
+	tabsList := make([]tabs.Tab, n)
 
-	ipViewer.Table().SetKeys(
-		table.NewKey(
-			[]string{"p"},
-			"p pause/resume",
-			"pause/resume scan",
-			func() tea.Msg { return TogglePauseMsg{} },
-		),
-		table.NewKey(
-			[]string{"l"},
-			"l log",
-			"view logs",
-			nil,
-		))
-
-	return &Model{
-		id:       ui.NewComponentID(),
-		name:     "Scanner",
-		layout:   layout,
-		maxIPs:   maxIPs,
-		scanner:  scannerObj,
-		progress: progress.New(layout),
-		ipViewer: ipViewer,
-
-		ips:   make([]result.IPScanResult, 0, maxIPs),
-		batch: make([]result.IPScanResult, 0, 50),
-
-		status: StatusPreProcess,
-	}
-}
-
-// --- ui.Component implementation ---
-
-func (m *Model) ID() ui.ComponentID { return m.id }
-
-func (m *Model) Name() string { return m.name }
-
-func (m *Model) Mode() env.Mode { return env.ScanMode }
-
-func (m *Model) OnClose() tea.Cmd { return nil }
-
-// Init starts the scanner in a background goroutine.
-func (m *Model) Init() tea.Cmd {
-
-	go func() {
-
-		// Step 1: preprocessing phase
-		if err := m.scanner.PreProcess(); err != nil {
-			m.onError(err)
-			return
+	for i, stage := range stages {
+		viewMode := ipviewer.ShortView
+		if stage.Mode == scanner.XRAY_SCAN {
+			viewMode = ipviewer.FullView
 		}
 
-		m.mu.Lock()
-		m.status = StatusScanning
-		m.mu.Unlock()
+		m.ipViewers[i] = createIpViewer(layout, viewMode)
+		m.progress[i] = progress.New(layout)
+		m.results[i] = make([]result.IPScanResult, 0, maxIPs)
+		m.batch[i] = make([]result.IPScanResult, 0, 128)
+		m.status[i] = StatusWaiting
+		tabsList[i] = tabs.NewTab(string(stage.Mode), i)
+	}
 
-		// Step 2: start scanning
-		m.scanner.Scan(
-			engine.ScanHooks{
-				OnProgress: m.onProgress,
-				OnSuccess:  m.onSuccess,
-				OnScanEnd:  m.onScanEnd,
-				OnError:    m.onError,
-			},
-		)
-	}()
+	m.tabs = tabs.New(layout, tabsList, func(idx int, _ tabs.Tab) tea.Cmd {
+		m.currentTab = idx
+		return m.immediateTick()
+	})
 
+	paddingY := lipgloss.Height(m.renderProgress(m.currentTab)) + lipgloss.Height(m.tabs.View()) + 10
+	for _, v := range m.ipViewers {
+		if viewer, ok := v.(*ipviewer.Model); ok {
+			viewer.Table().SetPaddingY(paddingY)
+		}
+	}
+
+	return m
+}
+
+func (m *Model) ID() ui.ComponentID { return m.id }
+func (m *Model) Name() string       { return m.name }
+func (m *Model) Mode() env.Mode     { return env.ScanMode }
+func (m *Model) OnClose() tea.Cmd   { return nil }
+
+func (m *Model) Init() tea.Cmd {
+	for i := range m.stages {
+		m.stages[i].AddHooks(engine.ScanHooks{
+			OnError:    m.onError,
+			OnProgress: m.onProgress(i),
+			OnSuccess:  m.onSuccess(i),
+			OnScanEnd:  m.onScanEnd(i),
+		})
+	}
+
+	m.status[0] = StatusPreProcess
+
+	go m.scn.Run()
 	return m.tick()
 }
 
-// --- Tick Loop ---
-
-// tick triggers periodic UI updates.
 func (m *Model) tick() tea.Cmd {
 	interval := config.Get().General.StatusInterval.Duration()
-	return tea.Tick(interval, func(time.Time) tea.Msg {
-		return tickMsg{}
-	})
+	return tea.Tick(interval, func(time.Time) tea.Msg { return tickMsg{} })
 }
 
-// --- Scanner Callbacks (Background Goroutine) ---
-
-// onSuccess receives successful scan results from the engine.
-func (m *Model) onSuccess(ip result.IPScanResult) {
-
-	m.mu.Lock()
-	m.batch = append(m.batch, ip)
-	m.mu.Unlock()
+func (m *Model) onSuccess(i int) func(result.IPScanResult) {
+	return func(ip result.IPScanResult) {
+		m.mu.Lock()
+		m.batch[i] = append(m.batch[i], ip)
+		m.mu.Unlock()
+	}
 }
 
-// onProgress receives progress updates from the engine.
-func (m *Model) onProgress(p engine.Progress) {
+func (m *Model) onProgress(i int) func(engine.Progress) {
+	return func(p engine.Progress) {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+
+		if m.status[i] <= StatusPreProcess {
+			m.status[i] = StatusScanning
+		}
+		m.progressInfo[i] = p
+	}
+}
+
+func (m *Model) onError(err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.status == StatusScanning {
-		m.progressInfo = p
+
+	for i := range m.status {
+		if m.status[i] != StatusEnded {
+			m.status[i] = StatusError
+		}
 	}
-}
-
-// onError records scanner errors.
-func (m *Model) onError(err error) {
-
-	m.mu.Lock()
-	m.status = StatusError
 	m.scanError = err
-	m.mu.Unlock()
 }
 
-// onScanEnd marks the scanner as finished.
-func (m *Model) onScanEnd() {
-	m.mu.Lock()
-	m.status = StatusEnded
-	m.mu.Unlock()
-}
-
-// --- UI Thread Logic ---
-
-// mergeBatch transfers results from the background buffer
-// into the UI result list.
-func (m *Model) mergeBatch() {
-
-	m.mu.Lock()
-
-	if len(m.batch) == 0 {
+func (m *Model) onScanEnd(i int) func() {
+	return func() {
+		m.mu.Lock()
+		m.status[i] = StatusEnded
 		m.mu.Unlock()
-		return
 	}
+}
 
-	newIPs := make([]result.IPScanResult, len(m.batch))
-	copy(newIPs, m.batch)
+// mergeBatch merges staged results into the main result set.
+// Uses swap-slice pattern to minimize lock duration.
+func (m *Model) mergeBatch() {
+	for i := range m.stages {
+		m.mu.Lock()
+		if len(m.batch[i]) == 0 {
+			m.mu.Unlock()
+			continue
+		}
 
-	m.batch = m.batch[:0]
+		newBatch := m.batch[i]
+		m.batch[i] = m.batch[i][:0]
+		m.mu.Unlock()
 
-	m.mu.Unlock()
+		m.results[i] = append(m.results[i], newBatch...)
 
-	// Merge results
-	m.ips = append(m.ips, newIPs...)
+		sort.Slice(m.results[i], func(a, b int) bool {
+			return m.results[i][a].Latency < m.results[i][b].Latency
+		})
 
-	// Sort by latency (fastest first)
-	sort.Slice(m.ips, func(i, j int) bool {
-		return m.ips[i].Latency < m.ips[j].Latency
-	})
+		if len(m.results[i]) > m.maxIPs {
+			m.results[i] = m.results[i][:m.maxIPs]
+		}
 
-	// Limit result list
-	if len(m.ips) > m.maxIPs {
-		m.ips = m.ips[:m.maxIPs]
+		if viewer, ok := m.ipViewers[i].(*ipviewer.Model); ok {
+			viewer.SetRows(m.results[i])
+		}
+	}
+}
+
+func (m *Model) currentStatus() StageStatus {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.status[m.currentTab]
+}
+
+func (m *Model) currentProgress() float64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.progressInfo[m.currentTab].Percent / 100
+}
+
+func (m *Model) currentError() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.scanError
+}
+
+func createIpViewer(layout *layout.Layout, mode ipviewer.ViewMode) ui.Component {
+	viewer := ipviewer.New(layout, "", nil, mode)
+
+	viewer.Table().SetKeys(
+		table.NewKey([]string{tea.KeyTab.String()}, "tab", "next tab", nil),
+		table.NewKey([]string{"p"}, "pause", "pause/resume scan", nil),
+		table.NewKey([]string{"l"}, "log", "view logs", nil),
+	)
+
+	return viewer
+}
+
+func (m *Model) immediateTick() tea.Cmd {
+	return func() tea.Msg { return immediateTickMsg{} }
+}
+
+func (m *Model) forceResize() tea.Cmd {
+	return func() tea.Msg {
+		return tea.WindowSizeMsg{
+			Width:  m.layout.Terminal.Width,
+			Height: m.layout.Terminal.Height,
+		}
 	}
 }

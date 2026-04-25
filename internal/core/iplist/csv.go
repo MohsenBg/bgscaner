@@ -2,6 +2,7 @@ package iplist
 
 import (
 	"context"
+	"io"
 	"strconv"
 	"strings"
 
@@ -101,23 +102,29 @@ func WriteCSV(path string, fn func(func(IPList) error) error) error {
 //	out := make(chan string)
 //	go func() {
 //	    defer close(out)
-//	    StreamActiveIPs(ctx, "targets.csv", out)
+//	    StreamActiveIPs(ctx, "targets.csv",0, out)
 //	}()
 //
 //	for ip := range out { fmt.Println(ip) }
-func StreamActiveIPs(ctx context.Context, path string, out chan<- string) error {
+func StreamActiveIPs(ctx context.Context, path string, limit int, out chan<- string) error {
+	count := 0
+
 	return ReadCSV(path, func(row IPList) error {
 		if !row.Enable {
 			return nil
 		}
 
+		if limit > 0 && count >= limit {
+			return io.EOF // stop CSV iteration
+		}
+
 		if row.IsCIDR() {
-			// Expand CIDR into individual IPs
-			return ip.StreamCIDR(ctx, row.IP, out)
+			return ip.StreamCIDR(ctx, row.IP, limit-count, out)
 		}
 
 		select {
 		case out <- row.IP:
+			count++
 			return nil
 		case <-ctx.Done():
 			return ctx.Err()

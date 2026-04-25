@@ -2,12 +2,9 @@ package xray
 
 import (
 	"bgscan/internal/core/filemanager"
-	"encoding/json"
 	"fmt"
 	"net"
-	"os"
 	"path/filepath"
-	"strings"
 )
 
 const (
@@ -17,7 +14,7 @@ const (
 
 	// templatePath is the directory containing outbound configuration
 	// templates used to construct Xray configs dynamically.
-	templatePath = "assets/xray/templates"
+	templatePath = "assets/xray/outbounds"
 )
 
 // GenerateConfig builds a complete Xray configuration from a template
@@ -38,36 +35,22 @@ const (
 //
 // The returned value is the path to the generated configuration file,
 // which can then be passed to an Xray process.
-func GenerateConfig(templateName, ip string, port int) (string, error) {
-
+func GenerateConfig(outboundName, ip string, port uint16) (string, error) {
 	// Validate IP
 	if net.ParseIP(ip) == nil {
 		return "", fmt.Errorf("invalid IP: %s", ip)
 	}
 
 	// Get template file path
-	tmplPath, err := GetTemplateByName(templateName)
+	template, err := GetOutboundTemplateByName(outboundName)
 	if err != nil {
 		return "", err
 	}
 
-	// Read template
-	raw, err := os.ReadFile(tmplPath)
+	outbound, err := applyOutboundTemplate(template.Path, ip)
 	if err != nil {
-		return "", fmt.Errorf("failed to read template file: %w", err)
+		return "", err
 	}
-
-	// Parse template JSON
-	var outbound any
-	if err := json.Unmarshal(raw, &outbound); err != nil {
-		return "", fmt.Errorf("failed to parse template JSON: %w", err)
-	}
-
-	// Replace placeholders
-	replacements := map[string]string{
-		"$ADDRESS": ip,
-	}
-	outbound = replacePlaceholders(outbound, replacements)
 
 	// Build full config
 	config := XrayConfig{
@@ -84,24 +67,6 @@ func GenerateConfig(templateName, ip string, port int) (string, error) {
 	}
 
 	return outputPath, nil
-}
-
-// GetTemplateByName resolves a template file from the template directory.
-//
-// If the provided name does not include a ".json" extension, it is
-// automatically appended. The function verifies that the template file
-// exists before returning its path.
-func GetTemplateByName(name string) (string, error) {
-	if ext := filepath.Ext(name); ext != ".json" {
-		name = strings.TrimSuffix(name, ext) + ".json"
-	}
-
-	path := filepath.Join(templatePath, name)
-	if _, err := os.Stat(path); err != nil {
-		return "", fmt.Errorf("cannot read template file %s: %w", path, err)
-	}
-
-	return path, nil
 }
 
 // getNewXrayConfigName returns the file path for a generated

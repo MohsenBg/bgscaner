@@ -4,13 +4,16 @@ import (
 	"bgscan/internal/ui/shared/env"
 	"bgscan/internal/ui/shared/layout"
 	"bgscan/internal/ui/shared/ui"
+	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // Column is an alias to bubbles/table Column for convenience.
@@ -53,6 +56,8 @@ type Model struct {
 
 	// Original column widths used for resizing
 	colsWidth []int
+
+	paddingY int
 }
 
 // Init implements the BubbleTea initialization interface.
@@ -84,18 +89,24 @@ func (m *Model) OnClose() tea.Cmd {
 //   - layout: UI layout reference
 func New(title string, cols []table.Column, rows []table.Row, layout *layout.Layout) *Model {
 	m := &Model{
-		id:     ui.NewComponentID(),
-		name:   "table",
-		Title:  title,
-		Layout: layout,
-		Help:   help.New(),
-		Keys:   defaultKeys(),
+		id:       ui.NewComponentID(),
+		name:     "table",
+		Title:    title,
+		Layout:   layout,
+		Help:     help.New(),
+		Keys:     defaultKeys(),
+		paddingY: 10,
 	}
 
 	m.BubbleTable = m.createTable(rows, cols)
 	m.updateTableSize()
 
 	return m
+}
+
+func (m *Model) SetPaddingY(padding int) {
+	m.paddingY = padding
+	m.updateTableSize()
 }
 
 //
@@ -114,6 +125,38 @@ type ActionKey struct {
 
 // NewKey creates a new ActionKey definition.
 func NewKey(keys []string, shortHelp, fullHelp string, cmd tea.Cmd) ActionKey {
+	ks := make([]string, len(keys))
+
+	for i, key := range keys {
+		switch key {
+		case "up", "↑":
+			ks[i] = "↑"
+		case "down", "↓":
+			ks[i] = "↓"
+		case "left", "←":
+			ks[i] = "←"
+		case "right", "→":
+			ks[i] = "→"
+		default:
+			ks[i] = key
+		}
+	}
+
+	// Join nicely (e.g., "↑/↓")
+	kstr := strings.Join(ks, "/")
+
+	if kstr == "" {
+		kstr = "?"
+	}
+
+	if shortHelp != "" {
+		shortHelp = fmt.Sprintf("%s %s", kstr, shortHelp)
+	}
+
+	if fullHelp != "" {
+		fullHelp = fmt.Sprintf("%s %s", kstr, fullHelp)
+	}
+
 	return ActionKey{
 		Keys:      keys,
 		ShortHelp: shortHelp,
@@ -225,57 +268,57 @@ func defaultKeys(keys ...ActionKey) KeyMap {
 
 	km.Add(NewKey(
 		[]string{"up", "k"},
-		"↑/k up",
-		"↑/k Move up",
+		"up",
+		"Move up",
 		nil,
 	))
 
 	km.Add(NewKey(
 		[]string{"down", "j"},
-		"↓/j down",
-		"↓/j Move down",
+		"down",
+		"Move down",
 		nil,
 	))
 
 	km.Add(NewKey(
 		[]string{"b", "pgup"},
 		"",
-		"b/pgup Page up",
+		"Page up",
 		nil,
 	))
 
 	km.Add(NewKey(
 		[]string{"f", "pgdown", spacebar},
 		"",
-		"f/pgdn Page down",
+		"Page down",
 		nil,
 	))
 
 	km.Add(NewKey(
 		[]string{"u", "ctrl+u"},
 		"",
-		"u ½ page up",
+		"½ page up",
 		nil,
 	))
 
 	km.Add(NewKey(
 		[]string{"d", "ctrl+d"},
 		"",
-		"d ½ page down",
+		"½ page down",
 		nil,
 	))
 
 	km.Add(NewKey(
 		[]string{"home", "g"},
 		"",
-		"g/home Go to start",
+		"Go to start",
 		nil,
 	))
 
 	km.Add(NewKey(
 		[]string{"end", "G"},
 		"",
-		"G/end Go to end",
+		"Go to end",
 		nil,
 	))
 
@@ -285,15 +328,15 @@ func defaultKeys(keys ...ActionKey) KeyMap {
 
 	km.Add(NewKey(
 		[]string{"?"},
-		"? help",
-		"? Toggle help",
+		"help",
+		"Toggle help",
 		nil,
 	))
 
 	km.Add(NewKey(
 		[]string{"q", "esc"},
-		"q quit",
-		"q Quit",
+		"quit",
+		"Quit",
 		nil,
 	))
 
@@ -387,7 +430,12 @@ func (m *Model) updateTableSize() {
 	}
 
 	width := m.tableWidth()
-	height := max(1, m.Layout.Content.Height-20)
+
+	helpHeight := lipgloss.Height(m.renderHelpView())
+	titleHeight := lipgloss.Height(m.renderTitle())
+	padding := m.paddingY
+
+	height := max(1, m.Layout.Content.Height-helpHeight-titleHeight-padding)
 
 	cols := m.BubbleTable.Columns()
 	if len(cols) == 0 {

@@ -16,74 +16,108 @@ import (
 // HTTP PROBE
 //
 
-// HTTPProbe implements the Probe interface for performing HTTP/HTTPS requests.
+// HTTPProbe implements the Probe interface for performing HTTP or HTTPS
+// service validation during scanning.
 //
-// The probe is designed for network scanning scenarios where:
+// The probe connects directly to a target IP address while preserving
+// the original hostname semantics for:
 //
-//   - The TCP connection must be made directly to a specific IP address
-//   - The original hostname must be preserved for HTTP Host headers and TLS SNI
+//   - HTTP Host headers
+//   - TLS Server Name Indication (SNI)
 //
-// This separation allows accurate virtual‑host and TLS scanning while bypassing DNS.
+// This design allows accurate scanning of virtual‑host based services
+// and TLS endpoints while bypassing DNS resolution entirely.
 type HTTPProbe struct {
 	req HTTPRequest
 }
 
-// HTTPRequest represents a fully resolved, normalized HTTP request configuration.
+// HTTPRequest represents a fully resolved HTTP request configuration
+// used by HTTPProbe during execution.
 //
-// It is derived from user configuration and contains all information required
-// to perform a probe against a single IP address.
+// Instances of HTTPRequest are typically produced by
+// NewHTTPRequestFromConfig after validating and normalizing user input.
 type HTTPRequest struct {
-	// URL is the full request URL including scheme, host, and port.
-	// Example: "https://example.com:443"
+
+	// URL is the complete request URL including scheme, hostname, and port.
+	//
+	// Example:
+	//   https://example.com:443
 	URL string
 
 	// Host is the normalized hostname extracted from configuration.
-	// It is primarily used for SNI and hostname validation.
+	// It is primarily used for hostname validation and TLS server identity.
 	Host string
 
-	// SNI is the Server Name Indication value used during the TLS handshake.
-	// If empty, the TLS stack may fall back to Host.
+	// SNI defines the Server Name Indication value used during the TLS
+	// handshake when HTTPS is enabled.
+	//
+	// If empty, the TLS implementation may fall back to the hostname.
 	SNI string
 
-	// UseTLS indicates whether HTTPS (true) or plain HTTP (false) is used.
+	// UseTLS indicates whether the request should use HTTPS (true)
+	// or plain HTTP (false).
 	UseTLS bool
 
 	// SkipTLSVerify disables TLS certificate verification.
-	// This is useful for scanning but should not be used in production clients.
+	//
+	// This is commonly used in scanning environments where certificates
+	// may not match the scanned hostname.
 	SkipTLSVerify bool
 
-	// Timeout defines the total time allowed for the request,
-	// including dialing, TLS handshake, and response headers.
+	// Timeout defines the maximum duration allowed for the entire request
+	// lifecycle including dialing, TLS handshake, and response headers.
 	Timeout time.Duration
 
-	// MinTLSVersion and MaxTLSVersion constrain the allowed TLS protocol versions.
+	// MinTLSVersion defines the minimum TLS version allowed for the
+	// connection handshake.
 	MinTLSVersion uint16
+
+	// MaxTLSVersion defines the maximum TLS version allowed for the
+	// connection handshake.
 	MaxTLSVersion uint16
 }
 
-// NewHTTPProbe creates a new HTTPProbe instance using a resolved HTTPRequest.
+// NewHTTPProbe constructs a new HTTPProbe using the provided HTTPRequest
+// configuration.
+//
+// The returned value implements the Probe interface and can be used
+// by the scanner engine to perform HTTP service checks against IP
+// addresses.
 func NewHTTPProbe(req HTTPRequest) Probe {
 	return &HTTPProbe{req: req}
 }
 
-// Run executes the HTTP probe against a specific IP address.
+// Init prepares the HTTPProbe for execution.
 //
-// The function:
+// HTTPProbe does not require background initialization, therefore
+// Init currently performs no work and returns nil.
 //
-//   - Respects context cancellation
-//   - Establishes a TCP connection directly to the IP
-//   - Preserves hostname semantics for HTTP and TLS
-//   - Measures request latency
+// The method exists to satisfy the Probe lifecycle contract
+// (Init → Run → Close).
+func (p *HTTPProbe) Init(ctx context.Context) error {
+	return nil
+}
+
+// Run executes an HTTP probe against the provided IP address.
+//
+// The probe performs the following steps:
+//
+//  1. Builds a custom http.Client bound to the target IP.
+//  2. Creates an HTTP HEAD request to minimize bandwidth usage.
+//  3. Establishes a TCP connection directly to the IP address.
+//  4. Preserves the original hostname for HTTP Host headers and TLS SNI.
+//  5. Measures request latency.
+//
+// The function respects context cancellation and will abort early
+// if the provided context is canceled.
 func (p *HTTPProbe) Run(ctx context.Context, ip string) (*result.IPScanResult, error) {
 
-	// Abort early if the context has already been canceled.
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
 	client := p.buildHTTPClient(ip)
 
-	// Use HEAD to minimize bandwidth while still validating service availability.
 	req, err := http.NewRequestWithContext(ctx, http.MethodHead, p.req.URL, nil)
 	if err != nil {
 		return nil, err
@@ -107,14 +141,15 @@ func (p *HTTPProbe) Run(ctx context.Context, ip string) (*result.IPScanResult, e
 // HTTP CLIENT CONSTRUCTION
 //
 
-// buildHTTPClient creates a customized http.Client for this probe.
+// buildHTTPClient constructs an http.Client configured specifically
+// for scanning workflows.
 //
-// The client:
+// The returned client:
 //
-//   - Forces connections to the provided IP address
-//   - Preserves original host and SNI information
-//   - Disables connection reuse to simplify lifecycle management
-//   - Applies strict timeouts suitable for scanning workloads
+//   - Forces TCP connections to the provided IP address
+//   - Preserves hostname information for HTTP and TLS layers
+//   - Disables connection reuse for predictable probe behavior
+//   - Applies strict timeouts suitable for high‑volume scans
 func (p *HTTPProbe) buildHTTPClient(ip string) *http.Client {
 
 	dialer := &net.Dialer{
@@ -122,8 +157,10 @@ func (p *HTTPProbe) buildHTTPClient(ip string) *http.Client {
 	}
 
 	transport := &http.Transport{
-		// DialContext overrides the destination address to force the IP,
-		// while still letting http.Client believe it is connecting to the host.
+
+		// DialContext overrides the destination address so the TCP
+		// connection is made directly to the provided IP instead of
+		// resolving the hostname via DNS.
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 
 			_, port, err := net.SplitHostPort(addr)
@@ -135,16 +172,14 @@ func (p *HTTPProbe) buildHTTPClient(ip string) *http.Client {
 			return dialer.DialContext(ctx, network, target)
 		},
 
-		// DisableKeepAlives ensures each request uses a fresh connection.
-		// This avoids cross‑request state leakage during scanning.
+		// DisableKeepAlives ensures each probe uses a fresh TCP connection.
+		// This prevents connection reuse side‑effects during large scans.
 		DisableKeepAlives: true,
 
-		// Timeouts for header reading and TLS handshakes.
 		ResponseHeaderTimeout: p.req.Timeout,
 		TLSHandshakeTimeout:   p.req.Timeout,
 	}
 
-	// Apply TLS configuration when HTTPS is enabled.
 	if p.req.UseTLS {
 		transport.TLSClientConfig = &tls.Config{
 			ServerName:         p.req.SNI,
@@ -164,15 +199,16 @@ func (p *HTTPProbe) buildHTTPClient(ip string) *http.Client {
 // CONFIG NORMALIZATION
 //
 
-// NewHTTPRequestFromConfig converts a raw HTTPConfig into a fully resolved HTTPRequest.
+// NewHTTPRequestFromConfig converts a user‑provided HTTPConfig into a
+// normalized HTTPRequest suitable for execution by HTTPProbe.
 //
-// This function performs:
+// The function performs several validation and normalization steps:
 //
-//   - Protocol normalization (HTTP vs HTTPS)
-//   - Hostname validation and normalization (IDN support)
-//   - Default port resolution
-//   - TLS version parsing and validation
-//   - SNI determination
+//   - Resolves protocol scheme (HTTP or HTTPS)
+//   - Normalizes and validates hostnames (including IDN handling)
+//   - Determines the correct service port
+//   - Resolves TLS Server Name Indication (SNI)
+//   - Parses TLS version constraints
 func NewHTTPRequestFromConfig(cfg config.HTTPConfig) (*HTTPRequest, error) {
 
 	scheme := netutil.ProtocolToScheme(cfg.Protocol)
@@ -217,8 +253,8 @@ func NewHTTPRequestFromConfig(cfg config.HTTPConfig) (*HTTPRequest, error) {
 // HELPER FUNCTIONS
 //
 
-// resolvePort returns the explicitly configured port,
-// or the protocol default (443 for HTTPS, 80 for HTTP).
+// resolvePort returns the configured port if provided,
+// otherwise the protocol default (443 for HTTPS, 80 for HTTP).
 func resolvePort(port int, isHTTPS bool) uint16 {
 
 	if port > 0 {
@@ -232,9 +268,10 @@ func resolvePort(port int, isHTTPS bool) uint16 {
 	return 80
 }
 
-// resolveSNI determines the Server Name Indication value for TLS.
+// resolveSNI determines the TLS Server Name Indication value
+// based on configuration.
 //
-// If TLS is disabled or no server name is provided,
+// If HTTPS is disabled or no server name is provided,
 // an empty string is returned.
 func resolveSNI(serverName string, isHTTPS bool) (string, error) {
 
@@ -245,10 +282,8 @@ func resolveSNI(serverName string, isHTTPS bool) (string, error) {
 	return netutil.ExtractTLSServerName(serverName)
 }
 
-// resolveTLSVersions parses and validates TLS version constraints.
-//
-// It ensures that the minimum TLS version is not greater
-// than the maximum allowed version.
+// resolveTLSVersions parses TLS version constraints from configuration
+// and validates that the minimum version is not greater than the maximum.
 func resolveTLSVersions(cfg config.HTTPConfig) (uint16, uint16, error) {
 
 	minTLS, err := netutil.ParseTLSVersion(cfg.MinTLSVersion)
@@ -268,6 +303,10 @@ func resolveTLSVersions(cfg config.HTTPConfig) (uint16, uint16, error) {
 	return minTLS, maxTLS, nil
 }
 
+// Close implements the Probe interface cleanup method.
+//
+// HTTPProbe does not maintain long‑lived resources,
+// therefore Close currently performs no action.
 func (p *HTTPProbe) Close() error {
 	return nil
 }

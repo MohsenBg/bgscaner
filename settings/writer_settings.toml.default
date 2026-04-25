@@ -1,0 +1,14 @@
+# Result writer configuration
+
+# Interval (milliseconds) for merging the delta results
+# into the main result file.
+merge_flush_interval = 2000
+
+# Capacity of the internal channel used by scanner workers
+# to send IP scan results to the writer goroutine.
+chan_size = 4096
+
+# Initial capacity of the in-memory batch used to accumulate
+# IPScanResult entries before flushing to disk.
+batch_size = 4096
+

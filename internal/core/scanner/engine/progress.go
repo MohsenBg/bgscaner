@@ -7,9 +7,9 @@ import (
 
 // Progress represents the current execution status of the engine.
 type Progress struct {
-	Total        int64         // total number of tasks
-	Processed    int64         // number of processed tasks
-	Succeed      int64         // number of successful tasks
+	Total        uint64        // total number of tasks
+	Processed    uint64        // number of processed tasks
+	Succeed      uint64        // number of successful tasks
 	Percent      float64       // completion percentage (0-100)
 	Elapsed      time.Duration // active elapsed time (excluding pauses)
 	RatePerSec   float64       // processing rate (items/sec)
@@ -25,20 +25,17 @@ type Progress struct {
 func reportProgress(
 	start time.Time,
 	paused time.Duration,
-	total int64,
-	processed *int64,
-	succeed *int64,
+	total uint64,
+	processed *uint64,
+	succeed *uint64,
 	cb func(p Progress),
 ) {
 	now := time.Now()
 
-	done := atomic.LoadInt64(processed)
-	success := atomic.LoadInt64(succeed)
+	done := atomic.LoadUint64(processed)
+	success := atomic.LoadUint64(succeed)
 
-	elapsed := now.Sub(start) - paused
-	if elapsed < 0 {
-		elapsed = 0
-	}
+	elapsed := max(now.Sub(start)-paused, 0)
 
 	// Calculate processing rate
 	var rate float64

@@ -4,6 +4,7 @@ import (
 	"bgscan/internal/ui/components/basic/menu"
 	"bgscan/internal/ui/components/menus/iplist"
 	"bgscan/internal/ui/components/menus/logs"
+	"bgscan/internal/ui/components/menus/outbounds"
 	"bgscan/internal/ui/components/menus/resultlist"
 	"bgscan/internal/ui/components/menus/targetsource"
 	"bgscan/internal/ui/shared/env"
@@ -71,6 +72,15 @@ func newMainMenu(layout *layout.Layout) *menu.Model {
 		menu.NewMenuItem("▲", "Result Files", "r", func() tea.Msg {
 			return ui.OpenComponentMsg{
 				Component: resultlist.New(layout, "Result Files", nil),
+			}
+		}),
+		menu.NewMenuItem("X", "Xray Outbound", "x", func() tea.Msg {
+			return ui.OpenComponentMsg{
+				Component: outbounds.New(
+					layout,
+					"Xray Outbound",
+					nil,
+				),
 			}
 		}),
 		menu.NewMenuItem("ⓘ", "Logs", "l", func() tea.Msg {

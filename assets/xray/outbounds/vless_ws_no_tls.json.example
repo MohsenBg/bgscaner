@@ -1,0 +1,28 @@
+{
+  "tag": "vless-ws-no-tls",
+  "protocol": "vless",
+  "settings": {
+    "vnext": [
+      {
+        "address": "$ADDRESS",
+        "port": 80,
+        "users": [
+          {
+            "id": "?",
+            "encryption": "none"
+          }
+        ]
+      }
+    ]
+  },
+  "streamSettings": {
+    "network": "ws",
+    "security": "none",
+    "wsSettings": {
+      "path": "?",
+      "headers": {
+        "Host": "?"
+      }
+    }
+  }
+}

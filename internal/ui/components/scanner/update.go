@@ -6,155 +6,172 @@ import (
 	logview "bgscan/internal/ui/components/basic/logview"
 	"bgscan/internal/ui/components/basic/notice"
 	"bgscan/internal/ui/components/basic/progress"
-	"bgscan/internal/ui/components/menus/ipviewer"
 	"bgscan/internal/ui/shared/ui"
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// Update handles incoming BubbleTea messages and updates the scanner state.
-//
-// Responsibilities:
-//   - Handle periodic tick updates
-//   - Process user keyboard input
-//   - Forward messages to child components
-//   - Manage scanner lifecycle events
-//   - Synchronize UI with background scan progress
 func (m *Model) Update(msg tea.Msg) (ui.Component, tea.Cmd) {
-
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
 
-	// Periodic UI refresh
+	// Regular periodic update
 	case tickMsg:
-		m.mergeBatch()
-		m.updateTableRows()
-		return m, m.handleTick()
+		cmds = append(cmds, m.updateTick(), m.tick())
+		return m, tea.Batch(cmds...)
 
-	// Pause / resume scan
+	// Instant refresh
+	case immediateTickMsg:
+		cmds = append(cmds, m.updateTick(), m.forceResize())
+		return m, tea.Batch(cmds...)
+
+	// Pause toggle via UI
 	case TogglePauseMsg:
 		m.togglePause()
+		return m, nil
 
-	// Keyboard input
+	// Global keybindings
 	case tea.KeyMsg:
-
-		switch msg.String() {
-
-		// Exit scan
-		case "q", "b":
-			return m, confirm.ConfirmCmd(
-				m.layout,
-				"Do you want to exit the scan?",
-				func() tea.Msg {
-					if m.scanner != nil {
-						m.scanner.Close()
-					}
-					return ui.ResetComponentStacksMsg{}
-				},
-				false,
-			)
-
-		// Open log viewer
-		case "l":
-			return m, m.openLogViewer()
-		}
+		cmds = append(cmds, m.handleKey(msg))
 	}
 
-	// Forward message to child components
-	var tCmd, pCmd tea.Cmd
-
-	m.ipViewer, tCmd = m.ipViewer.Update(msg)
-	m.progress, pCmd = m.progress.Update(msg)
-
-	cmds = append(cmds, tCmd, pCmd)
-
+	// Component updates (tab UI, progress, IP viewers)
+	cmds = append(cmds, m.updateComponents(msg))
 	return m, tea.Batch(cmds...)
 }
 
-// togglePause pauses or resumes the scanner depending on its current state.
-func (m *Model) togglePause() {
-
-	if m.scanner.IsPaused() {
-		m.scanner.Resume()
-		return
-	}
-
-	m.scanner.Pause()
-}
-
-// openLogViewer opens an overlay containing the core application logs.
-func (m *Model) openLogViewer() tea.Cmd {
-
-	return func() tea.Msg {
-
-		l := logview.New(m.layout, logger.Core(), "core logs")
-
-		l.SetContainerWidth(min(80, m.layout.Body.Width))
-		l.SetShowBorder(false)
-
-		m.logViewer = l
-
-		return ui.AddNewOverlay(l, ui.Center, ui.Center, 0, 0)
-	}
-}
-
-// updateTableRows synchronizes the IP viewer table with the latest scan results.
-func (m *Model) updateTableRows() {
-
-	if viewer, ok := m.ipViewer.(*ipviewer.Model); ok {
-		viewer.SetRows(m.ips)
-	}
-}
-
-// errorCmd creates a UI command that displays an error notice.
-func (m *Model) errorCmd(title, message string) tea.Cmd {
-	return notice.NewNoticeCmd(m.layout, title, message, notice.NOTICE_ERROR)
-}
-
-// infoCmd creates a UI command that displays an informational notice.
-func (m *Model) infoCmd(title, message string) tea.Cmd {
-	return notice.NewNoticeCmd(m.layout, title, message, notice.NOTICE_INFO)
-}
-
-// handleTick processes periodic scanner state updates.
 //
-// It updates the progress bar, handles scan completion,
-// and reacts to scanner errors.
-func (m *Model) handleTick() tea.Cmd {
+// ────────────────────────────────────────────────────────────
+//   Key Handling
+// ────────────────────────────────────────────────────────────
+//
 
+func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
+	switch msg.String() {
+
+	case "q", "b":
+		return confirm.ConfirmCmd(
+			m.layout,
+			"Do you want to exit the scan?",
+			func() tea.Msg {
+				m.scn.Close()
+				return ui.ResetComponentStacksMsg{}
+			},
+			false,
+		)
+
+	case "p":
+		m.togglePause()
+		return nil
+
+	case "l":
+		return m.openLogViewer()
+	}
+
+	return nil
+}
+
+//
+// ────────────────────────────────────────────────────────────
+//   Component Update Routing
+// ────────────────────────────────────────────────────────────
+//
+
+func (m *Model) updateComponents(msg tea.Msg) tea.Cmd {
+	idx := m.currentTab
+	var tCmd, pCmd, tabCmd tea.Cmd
+
+	m.ipViewers[idx], tCmd = m.ipViewers[idx].Update(msg)
+	m.progress[idx], pCmd = m.progress[idx].Update(msg)
+	m.tabs, tabCmd = m.tabs.Update(msg)
+
+	return tea.Batch(tCmd, pCmd, tabCmd)
+}
+
+//
+// ────────────────────────────────────────────────────────────
+//   Pause Toggle
+// ────────────────────────────────────────────────────────────
+//
+
+func (m *Model) togglePause() {
+	if m.scn.IsPaused() {
+		m.scn.Resume()
+	} else {
+		m.scn.Pause()
+	}
+}
+
+//
+// ────────────────────────────────────────────────────────────
+//   Log Viewer Overlay
+// ────────────────────────────────────────────────────────────
+//
+
+func (m *Model) openLogViewer() tea.Cmd {
+	return func() tea.Msg {
+		v := logview.New(m.layout, logger.Core(), "core logs")
+		v.SetContainerWidth(min(80, m.layout.Body.Width))
+		v.SetShowBorder(false)
+		return ui.AddNewOverlay(v, ui.Center, ui.Center, 0, 0)
+	}
+}
+
+//
+// ────────────────────────────────────────────────────────────
+//   Notices
+// ────────────────────────────────────────────────────────────
+//
+
+func (m *Model) errorCmd(title, msg string) tea.Cmd {
+	return notice.NewNoticeCmd(m.layout, title, msg, notice.NOTICE_ERROR)
+}
+
+func (m *Model) infoCmd(title, msg string) tea.Cmd {
+	return notice.NewNoticeCmd(m.layout, title, msg, notice.NOTICE_INFO)
+}
+
+//
+// ────────────────────────────────────────────────────────────
+//   Tick Update Handler
+// ────────────────────────────────────────────────────────────
+//
+
+func (m *Model) updateTick() tea.Cmd {
 	var cmds []tea.Cmd
 
-	switch m.status {
+	m.mergeBatch()
+
+	idx := m.currentTab
+
+	switch m.currentStatus() {
 
 	case StatusScanning:
-
-		cmds = append(cmds, func() tea.Msg {
-			return progress.UpdateProgressMsg{
-				Progress: m.progressInfo.Percent / 100,
-			}
-		})
+		pct := m.currentProgress()
+		cmds = append(cmds, progress.UpdateProgressMsg{
+			ID:       m.progress[idx].ID(),
+			Progress: pct,
+		}.Cmd())
 
 	case StatusEnded:
-
-		cmds = append(cmds, func() tea.Msg {
-			return progress.UpdateProgressMsg{Progress: 1}
-		})
+		cmds = append(cmds, progress.UpdateProgressMsg{
+			ID:       m.progress[idx].ID(),
+			Progress: 1,
+		}.Cmd())
 
 	case StatusError:
-
-		if m.scanError != nil {
-
+		if err := m.currentError(); err != nil {
 			cmds = append(cmds, m.errorCmd(
 				"Error while scanning",
-				fmt.Sprintf("%v", m.scanError),
+				fmt.Sprintf("%v", err),
 			))
 		}
-	}
 
-	// Schedule next tick
-	cmds = append(cmds, m.tick())
+	case StatusPreProcess, StatusWaiting:
+		// No UI update needed
+	}
 
 	return tea.Batch(cmds...)
 }

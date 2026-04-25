@@ -23,3 +23,6 @@ prefix_output = "tcp_"
 # sequential scanning patterns.
 shuffle_ips = true
 
+# Number of retry attempts per target.
+# Higher values increase reliability but also increase scan duration.
+tries = 1

@@ -31,8 +31,8 @@ func LoadAll(path string) ([]IPList, error) {
 }
 
 // CountIPs counts the total number of valid entries in an IP list file.
-func CountIPs(path string) (int64, error) {
-	var total int64
+func CountIPs(path string) (uint64, error) {
+	var total uint64
 
 	err := ReadCSV(path, func(entry IPList) error {
 		total += countIPEntry(entry.IP)
@@ -43,8 +43,8 @@ func CountIPs(path string) (int64, error) {
 }
 
 // CountActiveIPs counts the number of enabled entries in the file.
-func CountActiveIPs(path string) (int64, error) {
-	var total int64
+func CountActiveIPs(path string) (uint64, error) {
+	var total uint64
 
 	err := ReadCSV(path, func(entry IPList) error {
 		if entry.Enable {
@@ -113,7 +113,7 @@ func MergeFiles(dstPath string, srcPaths ...string) error {
 	})
 }
 
-func countIPEntry(ipStr string) int64 {
+func countIPEntry(ipStr string) uint64 {
 	// CIDR case
 	if _, ipNet, err := net.ParseCIDR(ipStr); err == nil {
 		ones, bits := ipNet.Mask.Size()

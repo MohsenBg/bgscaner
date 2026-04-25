@@ -81,8 +81,8 @@ func New(l *layout.Layout, title string, onSelect func(*iplist.IPFileInfo) tea.C
 			keys,
 			table.NewKey(
 				[]string{tea.KeyEnter.String()},
-				fmt.Sprintf("%s select", tea.KeyEnter.String()),
-				fmt.Sprintf("%s select ip File", tea.KeyEnter.String()),
+				"select",
+				"select ip File",
 				func() tea.Msg { return SelectMsg{} },
 			))
 	}
@@ -90,8 +90,8 @@ func New(l *layout.Layout, title string, onSelect func(*iplist.IPFileInfo) tea.C
 	keys = append(keys,
 		table.NewKey(
 			[]string{"a"},
-			"a add file",
-			"a add ip file",
+			"add file",
+			"add ip file",
 			picker.NewOpenPickFileCmd(
 				l,
 				"Select IP File .txt",
@@ -102,14 +102,14 @@ func New(l *layout.Layout, title string, onSelect func(*iplist.IPFileInfo) tea.C
 		),
 		table.NewKey(
 			[]string{"x"},
-			"x remove file",
-			"x remove ip file",
+			"remove file",
+			"remove ip file",
 			func() tea.Msg { return RequestDeleteIPFileMsg{} },
 		),
 		table.NewKey(
 			[]string{"r"},
-			"r rename file",
-			"r rename ip file",
+			"rename file",
+			"rename ip file",
 			func() tea.Msg { return RequestRenameIPFileMsg{} },
 		))
 

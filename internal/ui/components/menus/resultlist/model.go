@@ -72,8 +72,8 @@ func New(layout *layout.Layout, title string, onSelect func(*result.ResultFile) 
 	keys = append(keys,
 		table.NewKey(
 			[]string{tea.KeyEnter.String()},
-			"enter open",
-			"enter view result IPs",
+			"open",
+			"view result IPs",
 			func() tea.Msg { return SelectResultFileMsg{} },
 		),
 	)
@@ -81,8 +81,8 @@ func New(layout *layout.Layout, title string, onSelect func(*result.ResultFile) 
 	keys = append(keys,
 		table.NewKey(
 			[]string{"r"},
-			"r rename",
-			"r rename result file",
+			"rename",
+			"rename result file",
 			func() tea.Msg { return RequestRenameResultFileMsg{} },
 		),
 		table.NewKey(

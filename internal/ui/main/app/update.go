@@ -6,6 +6,7 @@ import (
 	"bgscan/internal/ui/shared/ui"
 	"bytes"
 	"runtime"
+	"runtime/pprof"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -31,8 +32,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 
-		if msg.String() == "t" {
-
+		if msg.String() == tea.KeyCtrlT.String() {
 			dumpGoroutines()
 		}
 
@@ -118,20 +118,37 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
+// DumpGoroutines logs a filtered view of all goroutines,
+// focusing on potentially blocked states. It also dumps
+// the full goroutine profile at debug level for offline analysis.
+//
+// Call this when you suspect worker leaks or stuck probes.
 func dumpGoroutines() {
 	var buf bytes.Buffer
 
 	count := runtime.NumGoroutine()
-	logger.DebugInfo("=== Goroutine Dump (%d) ===", count)
-	lines := strings.Split(buf.String(), "\n")
+	logger.DebugInfo("=== Goroutine Dump (count=%d) ===", count)
+
+	// Write full goroutine profile into buffer
+	if err := pprof.Lookup("goroutine").WriteTo(&buf, 2); err != nil {
+		logger.DebugError("failed to write goroutine profile: %v", err)
+		return
+	}
+
+	dump := buf.String()
+	lines := strings.Split(dump, "\n")
+
+	// Filter lines with suspicious wait states
 	for _, line := range lines {
 		if strings.Contains(line, "[chan receive]") ||
+			strings.Contains(line, "[chan send]") ||
 			strings.Contains(line, "[select]") ||
-			strings.Contains(line, "[IO wait]") {
-			logger.DebugInfo(line)
+			strings.Contains(line, "[IO wait]") ||
+			strings.Contains(line, "[sleep]") {
+			logger.DebugInfo("%s", line)
 		}
 	}
-	// pprof.Lookup("goroutine").WriteTo(&buf, 2)
 
-	logger.DebugDump("buffers", buf.String())
+	// Full dump for detailed analysis
+	logger.DebugDump("goroutines_full", dump)
 }

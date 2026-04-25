@@ -55,3 +55,4 @@ type RequestRenameIPFileMsg struct{}
 // This message is usually bound to the Enter key and is handled
 // only when a selection callback is configured.
 type SelectMsg struct{}
+

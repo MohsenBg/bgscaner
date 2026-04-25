@@ -1,0 +1,33 @@
+{
+  "tag": "vless-xhttp",
+  "protocol": "vless",
+  "settings": {
+    "vnext": [
+      {
+        "address": "$ADDRESS",
+        "port": 443,
+        "users": [
+          {
+            "id": "?",
+            "encryption": "none"
+          }
+        ]
+      }
+    ]
+  },
+  "streamSettings": {
+    "network": "xhttp",
+    "security": "tls",
+    "tlsSettings": {
+      "allowInsecure": false,
+      "serverName": "?",
+      "alpn": ["h2", "http/1.1"],
+      "fingerprint": "firefox"
+    },
+    "xhttpSettings": {
+      "path": "?",
+      "host": ["?"],
+      "mode": "auto"
+    }
+  }
+}

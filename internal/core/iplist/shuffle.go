@@ -34,7 +34,7 @@ func ShuffleFileFullyMemorySafe(ctx context.Context, ipFile string) (string, err
 	ips := make(chan string)
 	go func() {
 		defer close(ips)
-		_ = StreamActiveIPs(ctx, ipFile, ips)
+		_ = StreamActiveIPs(ctx, ipFile, 0, ips)
 	}()
 
 	// Process incoming IPs in chunks

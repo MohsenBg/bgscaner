@@ -1,6 +1,7 @@
 package scanner
 
 import (
+	"bgscan/internal/core/scanner/engine"
 	"fmt"
 	"time"
 
@@ -9,56 +10,35 @@ import (
 
 // View renders the scanner UI.
 //
-// The view consists of two main parts:
-//  1. The progress section (statistics, status, progress bar)
-//  2. The IP results viewer
+// Layout:
 //
-// Layout structure:
-//
-//	┌ Progress Information ┐
-//	│  Stats Row           │
-//	│  Status / ETA Row    │
-//	│  Progress Bar        │
-//	└──────────────────────┘
-//	┌ IP Results Table ┐
+//	Tabs
+//	Progress Panel
+//	IP Results Table
 func (m *Model) View() string {
+	idx := m.currentTab
+
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
-		m.renderProgress(),
-		m.ipViewer.View(),
+		m.tabs.View(),
+		m.renderProgress(idx),
+		m.ipViewers[idx].View(),
 	)
 }
 
-// renderProgress builds the progress panel shown above the results table.
+// renderProgress renders the progress panel shown above the IP results.
 //
-// It displays:
-//   - Scan statistics (processed, remaining, found, elapsed)
-//   - Current scanner state (preprocessing, scanning, paused, error, etc.)
-//   - Estimated remaining time when available
-//   - Progress bar
-func (m *Model) renderProgress() string {
-
-	p := m.progressInfo
+// Panel sections:
+//
+//  1. Scan statistics
+//  2. Current scanner status / ETA
+//  3. Progress bar
+func (m *Model) renderProgress(idx int) string {
+	p := m.progressInfo[idx]
 	width := m.layout.Body.Width
 
-	// --- Stats Row ---
-
-	stats := lipgloss.JoinHorizontal(
-		lipgloss.Left,
-		scannedStyle().Render(fmt.Sprintf("scanned: %d", p.Processed)),
-		separatorStyle().Render(" | "),
-		leftStyle().Render(fmt.Sprintf("left: %d", p.Total-p.Processed)),
-		separatorStyle().Render(" | "),
-		foundStyle().Render(fmt.Sprintf("found: %d", p.Succeed)),
-		separatorStyle().Render(" | "),
-		elapsedStyle().Render(fmt.Sprintf("elapsed: %v", p.Elapsed.Truncate(time.Second))),
-	)
-
-	// --- Status / ETA Row ---
-
-	statusText := m.statusText()
-
-	estRow := elapsedEndStyle().Render(statusText)
+	stats := m.renderStatsRow(p)
+	status := m.renderStatusRow()
 
 	container := lipgloss.NewStyle().
 		Width(width).
@@ -67,42 +47,57 @@ func (m *Model) renderProgress() string {
 	return lipgloss.JoinVertical(
 		lipgloss.Center,
 		container.Render(stats),
-		container.Padding(1, 0).Render(estRow),
-		container.Render(m.progress.View()),
+		container.Padding(1, 0).Render(status),
+		container.Render(m.progress[idx].View()),
 	)
 }
 
-// statusText returns the human‑readable scanner status message.
-//
-// The message reflects the current lifecycle state of the scanner:
-//
-//	PreProcess → "preparing scan..."
-//	Scanning   → shows estimated remaining time
-//	Paused     → "scan paused..."
-//	Ended      → "scan completed"
-//	Error      → error message
+// renderStatsRow builds the statistics row.
+func (m *Model) renderStatsRow(p engine.Progress) string {
+
+	left := p.Total - p.Processed
+	if left < 0 {
+		left = 0
+	}
+
+	return lipgloss.JoinHorizontal(
+		lipgloss.Left,
+		scannedStyle().Render(fmt.Sprintf("scanned: %d", p.Processed)),
+		separatorStyle().Render(" | "),
+		leftStyle().Render(fmt.Sprintf("left: %d", left)),
+		separatorStyle().Render(" | "),
+		foundStyle().Render(fmt.Sprintf("found: %d", p.Succeed)),
+		separatorStyle().Render(" | "),
+		elapsedStyle().Render(fmt.Sprintf(
+			"elapsed: %s",
+			p.Elapsed.Truncate(time.Second),
+		)),
+	)
+}
+
+// renderStatusRow returns the styled status line.
+func (m *Model) renderStatusRow() string {
+	return elapsedEndStyle().Render(m.statusText())
+}
+
+// statusText returns the human‑readable scanner state.
 func (m *Model) statusText() string {
+	idx := m.currentTab
+	status := m.status[idx]
+	p := m.progressInfo[idx]
 
-	p := m.progressInfo
-
-	switch m.status {
+	switch status {
 
 	case StatusPreProcess:
 		return "preparing scan..."
 
 	case StatusScanning:
 
-		if m.scanner.IsPaused() {
+		if m.scn.IsPaused() {
 			return "scan paused..."
 		}
 
-		left := time.Until(p.EstimatedEnd).Truncate(time.Second)
-
-		if left <= 0 {
-			return "estimated remaining..."
-		}
-
-		return fmt.Sprintf("estimated remaining: %v", left)
+		return m.estimateRemaining(p)
 
 	case StatusEnded:
 		return "scan completed"
@@ -117,3 +112,16 @@ func (m *Model) statusText() string {
 		return "starting scan..."
 	}
 }
+
+// estimateRemaining formats the ETA text.
+func (m *Model) estimateRemaining(p engine.Progress) string {
+
+	left := time.Until(p.EstimatedEnd).Truncate(time.Second)
+
+	if left <= 0 {
+		return "estimating remaining time..."
+	}
+
+	return fmt.Sprintf("estimated remaining: %v", left)
+}
+

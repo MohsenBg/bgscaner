@@ -1,6 +1,7 @@
 package footer
 
 import (
+	"bgscan/internal/core/config"
 	"bgscan/internal/ui/shared/env"
 	"bgscan/internal/ui/shared/layout"
 	"bgscan/internal/ui/shared/ui"
@@ -44,7 +45,7 @@ func New(l *layout.Layout) *Model {
 		id:         ui.NewComponentID(),
 		name:       "footer",
 		layout:     l,
-		appVersion: "2.0.3",
+		appVersion: config.AppVersion,
 		status:     "Main Menu",
 	}
 }

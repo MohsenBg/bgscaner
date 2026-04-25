@@ -12,244 +12,156 @@ import (
 	"time"
 )
 
-// ScanHooks defines optional lifecycle callbacks for the scanning engine.
 //
-// All hooks are optional and can be nil. They allow external components
-// (CLI, UI, metrics systems, etc.) to observe scan progress and results
-// without coupling them directly to the engine logic.
-type ScanHooks struct {
-
-	// OnProgress is called periodically with a snapshot of scan progress.
-	OnProgress func(p Progress)
-
-	// OnSuccess is called whenever a scan succeeds.
-	OnSuccess func(r result.IPScanResult)
-
-	// OnScanEnd is called once after the scan finishes completely.
-	OnScanEnd func()
-
-	// OnError is called when a recoverable engine error occurs.
-	OnError func(err error)
-}
-
-// RunScan is the main entry point of the scanning engine.
+// ────────────────────────────────────────────────────────────────────────────────
+//  runScan (Main Stage Orchestrator)
+// ────────────────────────────────────────────────────────────────────────────────
 //
-// It orchestrates the full scan lifecycle:
+
+// RunScan orchestrates the full lifecycle of a **single scan stage**.
 //
-//  1. Count total IPs to scan
-//  2. Spawn worker goroutines
-//  3. Stream IPs from the input source
-//  4. Execute probes concurrently
-//  5. Write results asynchronously
-//  6. Report scan progress periodically
+// It performs the following operations:
 //
-// The function blocks until the scan finishes or the context is cancelled.
+//  1. Count total active IPs.
+//  2. Create worker pool sized by IP count and cfg.Workers.
+//  3. Initialize producer → worker pool → result writer pipeline.
+//  4. Apply per-stage rate limiting.
+//  5. Connect progress reporter with pause/resume support.
+//  6. Ensure graceful teardown and final progress snapshot.
+//
+// This function blocks until the entire stage completes or the context is cancelled.
 func RunScan(
 	ctx context.Context,
-	workers int,
-	rate int,
-	ipFile string,
-	writer *result.Writer,
-	prb probe.Probe,
-	hooks ScanHooks,
+	input string,
+	maxIp int,
+	cfg ScanConfig,
 	pause *PauseController,
 ) {
-
-	// Determine total scan size for progress reporting.
-	total, err := iplist.CountActiveIPs(ipFile)
+	total, err := iplist.CountActiveIPs(input)
 	if err != nil {
-		if hooks.OnError != nil {
-			hooks.OnError(err)
-		}
+		cfg.Hooks.callOnError(err)
 		return
 	}
 
-	workers = min(workers, int(total))
-	// Channel used to distribute IPs to workers.
-	ips := make(chan string, workers*2)
+	// Worker count must not exceed number of IPs.
+	workers := min(cfg.Workers, int(total))
 
-	// Channel used by workers to emit scan results.
+	ips := make(chan string, workers*2)
 	results := make(chan result.IPScanResult)
 
-	// Ensures the writer goroutine flushes all results before returning.
 	var writerDone sync.WaitGroup
 	writerDone.Add(1)
 
-	// Used to stop the progress reporting goroutine.
 	progressDone := make(chan struct{})
 
-	// --- Rate limiter setup
-	// A ticker is used to control how often workers are allowed
-	// to start a scan operation.
-	var rateCh <-chan time.Time
+	rateCh := makeRateCh(cfg.Rate)
 
-	if rate > 0 {
-		interval := time.Second / time.Duration(rate)
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-
-		rateCh = ticker.C
-	} else {
-		// If rate limiting is disabled we create a closed channel.
-		// Reading from a closed channel returns immediately,
-		// effectively disabling throttling.
-		always := make(chan time.Time)
-		close(always)
-
-		rateCh = always
-	}
-
-	// --- Scan statistics
+	// Atomic counters used by progress reporter.
 	var (
-		processed int64 // total processed IPs
-		succeed   int64 // successful scans
+		processed uint64
+		succeed   uint64
 		start     = time.Now()
-
-		// Total time spent paused (nanoseconds).
-		pausedTime int64
 	)
 
-	// --- Progress reporting goroutine
 	//
-	// Periodically emits scan progress to the provided hook.
-	// This runs independently of worker execution.
-	if hooks.OnProgress != nil {
-
-		go func() {
-
-			interval := config.Get().General.StatusInterval.Duration()
-			ticker := time.NewTicker(interval)
-			defer ticker.Stop()
-
-			for {
-				select {
-
-				case <-progressDone:
-					return
-
-				case <-ctx.Done():
-					return
-
-				case <-ticker.C:
-
-					// When paused we accumulate pause time instead
-					// of reporting progress.
-					if pause != nil && pause.IsPaused() {
-						atomic.AddInt64(&pausedTime, int64(interval))
-						continue
-					}
-
-					reportProgress(
-						start,
-						time.Duration(atomic.LoadInt64(&pausedTime)),
-						total,
-						&processed,
-						&succeed,
-						hooks.OnProgress,
-					)
-				}
-			}
-		}()
-	}
-
-	// --- Result writer goroutine
+	// ─── Progress Reporter ───────────────────────────────────────────────
 	//
-	// Responsible for persisting scan results asynchronously.
-	// This prevents disk I/O from blocking worker goroutines.
-	go func() {
 
-		defer writerDone.Done()
-
-		writer.Start()
-
-		for r := range results {
-			writer.Write(r)
-		}
-
-		writer.Stop()
-	}()
-
-	// --- Worker pool
-	//
-	// Workers consume IPs from the `ips` channel and execute probes.
-	var wg sync.WaitGroup
-
-	for i := 0; i < workers; i++ {
-
-		wg.Add(1)
-
-		go func() {
-			defer wg.Done()
-
-			runWorker(
-				ctx,
-				ips,
-				results,
-				rateCh,
-				prb,
-				hooks,
-				pause,
-				&processed,
-				&succeed,
-			)
-		}()
-	}
-
-	// --- IP producer
-	//
-	// Streams IPs from the input file into the worker queue.
-	go func() {
-
-		defer close(ips)
-
-		if err := iplist.StreamActiveIPs(ctx, ipFile, ips); err != nil {
-
-			logger.CoreError("StreamActiveIPs: %v", err)
-
-			if hooks.OnError != nil {
-				hooks.OnError(err)
-			}
-		}
-	}()
-
-	// Wait for workers to finish processing.
-	wg.Wait()
-
-	// Signal writer that no more results will arrive.
-	close(results)
-
-	// Wait until all results are flushed to disk.
-	writerDone.Wait()
-
-	// Stop progress reporter.
-	close(progressDone)
-
-	err = prb.Close()
-	if err != nil {
-		hooks.OnError(err)
-	}
-
-	// Emit final progress snapshot.
-	if hooks.OnProgress != nil {
-		reportProgress(
+	if cfg.Hooks.OnProgress != nil {
+		go runProgressReporter(
+			ctx,
+			progressDone,
+			pause,
 			start,
-			time.Duration(atomic.LoadInt64(&pausedTime)),
 			total,
 			&processed,
 			&succeed,
-			hooks.OnProgress,
+			cfg.Hooks.OnProgress,
 		)
 	}
 
-	// Notify scan completion.
-	if hooks.OnScanEnd != nil {
-		hooks.OnScanEnd()
+	//
+	// ─── Writer Goroutine ───────────────────────────────────────────────
+	//
+	// Consumes results from workers and writes them using stage.Writer.
+	go func() {
+		defer writerDone.Done()
+		cfg.Writer.Start()
+		for r := range results {
+			cfg.Writer.Write(r)
+		}
+		cfg.Writer.Stop()
+	}()
+
+	//
+	// ─── Worker Pool ─────────────────────────────────────────────────────
+	//
+	var wg sync.WaitGroup
+	cfg.Probe.Init(ctx)
+	for range workers {
+		wg.Go(func() {
+			runScanWorker(ctx, ips, results, rateCh, cfg.Probe, cfg.Hooks, pause, &processed, &succeed)
+		})
 	}
+
+	//
+	// ─── IP Producer ─────────────────────────────────────────────────────
+	//
+	// Streams IPs from the input file asynchronously.
+	go func() {
+		defer close(ips)
+		if err := iplist.StreamActiveIPs(ctx, input, maxIp, ips); err != nil {
+			logger.CoreError("StreamActiveIPs: %v", err)
+			cfg.Hooks.callOnError(err)
+		}
+	}()
+
+	//
+	// ─── Shutdown Sequence ───────────────────────────────────────────────
+	//
+
+	wg.Wait()                 // workers done
+	cfg.Hooks.callOnScanEnd() // call scan end hook
+	close(results)            // stop sending new results
+	writerDone.Wait()         // wait for writer
+	close(progressDone)       // stop progress reporter
+
+	if err := cfg.Probe.Close(); err != nil {
+		cfg.Hooks.callOnError(err)
+	}
+
+	// Final progress update
+	if cfg.Hooks.OnProgress != nil {
+		reportProgress(
+			start,
+			pause.PausedDuration(),
+			total, &processed, &succeed,
+			cfg.Hooks.OnProgress,
+		)
+	}
+
+	cfg.Hooks.callOnScanEnd()
 }
 
-// runWorker processes IPs from the queue until the queue is closed
-// or the context is cancelled.
-func runWorker(
+//
+// ────────────────────────────────────────────────────────────────────────────────
+//  Worker
+// ────────────────────────────────────────────────────────────────────────────────
+//
+
+// runScanWorker processes IP addresses until:
+//   - the input channel is closed,
+//   - the context is cancelled,
+//   - or the PauseController returns false.
+//
+// Responsibilities:
+//   - Wait for pause/resume cycles.
+//   - Receive IP from queue.
+//   - Apply per-IP rate limiting.
+//   - Execute probe.Run().
+//   - Update atomic counters.
+//   - Push successful results to results channel.
+func runScanWorker(
 	ctx context.Context,
 	ips <-chan string,
 	results chan<- result.IPScanResult,
@@ -257,59 +169,114 @@ func runWorker(
 	prb probe.Probe,
 	hooks ScanHooks,
 	pause *PauseController,
-	processed, succeed *int64,
+	processed *uint64,
+	succeed *uint64,
 ) {
-
 	for {
-
-		// Block if scanning is paused.
+		// Handle pause/resume flow.
 		if pause != nil && !pause.Wait(ctx) {
 			return
 		}
 
 		select {
-
 		case <-ctx.Done():
 			return
 
 		case ip, ok := <-ips:
-
 			if !ok {
 				return
 			}
 
-			// Enforce rate limiting before executing probe.
+			// Rate limiting (per-IP)
 			select {
 			case <-rateCh:
 			case <-ctx.Done():
 				return
 			}
 
+			// Probe execution
 			r, err := prb.Run(ctx, ip)
-
-			// Count every processed IP.
-			atomic.AddInt64(processed, 1)
+			atomic.AddUint64(processed, 1)
 
 			if err != nil {
-				logger.CoreError("scan IP %s failed: %v", ip, err)
+				logger.CoreError("probe failed for %s: %v", ip, err)
 				continue
 			}
 
-			// Track successful scans.
-			atomic.AddInt64(succeed, 1)
+			atomic.AddUint64(succeed, 1)
+			hooks.callOnSuccess(*r)
 
-			// Notify success hook if present.
-			if hooks.OnSuccess != nil {
-				hooks.OnSuccess(*r)
-			}
-
-			// Send result to writer pipeline.
+			// Non-blocking unless context canceled
 			select {
 			case results <- *r:
-
 			case <-ctx.Done():
 				return
 			}
+		}
+	}
+}
+
+//
+// ────────────────────────────────────────────────────────────────────────────────
+//  Rate Limiter
+// ────────────────────────────────────────────────────────────────────────────────
+//
+
+// makeRateCh returns a ticker channel that enforces a per-second rate limit.
+//
+//	rate > 0  → new Ticker(1/rate)
+//	rate == 0 → closed channel (no rate limiting)
+func makeRateCh(rate int) <-chan time.Time {
+	if rate > 0 {
+		return time.NewTicker(time.Second / time.Duration(rate)).C
+	}
+	ch := make(chan time.Time)
+	close(ch)
+	return ch
+}
+
+//
+// ────────────────────────────────────────────────────────────────────────────────
+//  Progress Reporter
+// ────────────────────────────────────────────────────────────────────────────────
+//
+
+// runProgressReporter emits periodic progress updates until:
+//   - progressDone channel is closed,
+//   - or context cancels.
+//
+// It also tracks paused durations using PauseController.
+// The reporting interval is configured in General.StatusInterval.
+func runProgressReporter(
+	ctx context.Context,
+	progressDone <-chan struct{},
+	pause *PauseController,
+	start time.Time,
+	total uint64,
+	processed *uint64,
+	succeed *uint64,
+	onProgress func(Progress),
+) {
+	interval := config.Get().General.StatusInterval.Duration()
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-progressDone:
+			return
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if pause != nil && pause.IsPaused() {
+				continue
+			}
+			reportProgress(
+				start,
+				pause.PausedDuration(),
+				total, processed, succeed,
+				onProgress,
+			)
 		}
 	}
 }

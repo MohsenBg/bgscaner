@@ -1,0 +1,150 @@
+################################################################
+# DNS Scanner Configuration
+################################################################
+# This file controls the behaviour of all DNS-based scanning
+# and tunnelling modules: the bulk resolver scanner, the DNSTT
+# probe, and the Slipstream probe.
+################################################################
+
+
+################################################################
+# [resolver] — Bulk DNS Resolver Scanner
+#
+# Tests public DNS resolvers to find those that are reachable
+# and behave correctly. Results feed into subsequent probes.
+################################################################
+
+[resolver]
+
+# ── Core ─────────────────────────────────────────────────────
+# Number of concurrent worker goroutines.
+# Recommended range: 50–500 depending on available bandwidth.
+workers = 500
+
+# Transport protocol: "udp", "tcp", "dot" (DNS-over-TLS).
+# "doh" (DNS-over-HTTPS) is not supported.
+protocol = "udp"
+
+# Domain name used as the primary query target.
+domain = ""
+
+# DNS port used for scanning resolvers.
+port = 53
+
+# ── Query ────────────────────────────────────────────────────
+# Record types to query (e.g., "a", "aaaa", "ns", "txt", "mx").
+# For DNSTT compatibility, "txt" is strongly recommended.
+check_types = ["txt"]
+
+# EDNS buffer size in bytes sent in OPT records.
+ends_buffer_size = 0
+
+# ── Timing & Retry ───────────────────────────────────────────
+# Timeout in milliseconds to wait for a response.
+timeout = 2000
+
+# Number of network retries for the main probe.
+# Note: Retries only occur on network errors. If ANY DNS response
+# (regardless of Rcode) is received, retrying stops immediately.
+tries = 2
+
+# ── Behavior ─────────────────────────────────────────────────
+# Shuffle the order of IPs before scanning to distribute network load.
+shuffle_ips = true
+
+# If enabled, generates a random subdomain (e.g., x1y2z3.google.com)
+# to bypass resolver caches and force a fresh recursive lookup.
+random_subdomain = true
+
+# ── Filtering ────────────────────────────────────────────────
+# Defines which DNS response codes are treated as "Alive".
+#
+# SUPPORTED VALUES:
+#   - "noerror",  "success"        : (Code 0)
+#   - "formerr",  "formaterror"    : (Code 1)
+#   - "servfail", "serverfailure"  : (Code 2)
+#   - "nxdomain", "nameerror"      : (Code 3)
+#   - "notimp",   "notimplemented" : (Code 4)
+#   - "refused"                    : (Code 5)
+#
+# Recommended: ["noerror", "nxdomain"]
+accepted_rcodes = ["noerror", "nxdomain"]
+
+# ── DPI ──────────────────────────────────────────────────────
+# Logic: Sends a query for a non-existent ".invalid" domain.
+# If the resolver returns Success (Rcode 0), it is flagged as
+# a hijacking/tampered resolver and discarded immediately.
+
+# Enable or disable the anti-hijacking pre-check.
+check_dpi = false
+
+# Timeout in milliseconds specifically for the DPI check.
+# Usually shorter than the main timeout to skip bad resolvers quickly.
+dpi_timeout = 500
+
+# Max network retries for the DPI check (only on timeout/network errors).
+dpi_tries = 2
+
+# ── Output ───────────────────────────────────────────────────
+# Prefix added to the generated output file name.
+prefix_output = "dns_"
+
+
+################################################################
+# [dnstt] — DNS Tunnel Tool (DNSTT) Probe
+#
+# Tests whether surviving resolvers can carry a full tunnel.
+# Requires a DNSTT server running on the authoritative NS.
+################################################################
+
+[dnstt]
+
+# ── Core ─────────────────────────────────────────────────────
+# Enable or disable the DNSTT probe phase.
+enabled = false
+
+# Number of concurrent workers for handshakes (Recommended: 5–50).
+workers = 20
+
+# The authoritative DNS zone delegated to your DNSTT server.
+domain = ""
+
+# Base64-encoded Ed25519 public key of the DNSTT server.
+public_key = ""
+
+# ── Timing ───────────────────────────────────────────────────
+# Timeout in milliseconds for a complete handshake attempt.
+timeout = 10000
+
+# ── Output ───────────────────────────────────────────────────
+prefix_output = "dnstt_"
+
+
+################################################################
+# [slip_stream] — Slipstream DNS Probe
+#
+# Alternative tunnelling technique exploiting DNS behavior.
+################################################################
+
+[slip_stream]
+
+# ── Core ─────────────────────────────────────────────────────
+# Enable or disable the Slipstream probe phase.
+enabled = true
+
+# Number of concurrent workers for probes (Recommended: 5–50).
+workers = 20
+
+# The authoritative DNS zone used by the Slipstream server.
+domain = ""
+
+# Path to the TLS certificate used by the Slipstream server.
+cert_path = ""
+
+# ── Timing ───────────────────────────────────────────────────
+# Timeout in milliseconds for a complete Slipstream probe attempt.
+timeout = 8000
+
+# ── Output ───────────────────────────────────────────────────
+prefix_output = "slipstream_"
+

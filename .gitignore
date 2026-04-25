@@ -73,12 +73,28 @@ Thumbs.db
 # project
 /[Tt]mp
 /[Ll]ogs
-/ips
 /result
 
-# assets 
-assets/xray/xray
-assets/xray/templates/*
-assets/xray/configs/*
+
 __debug_bin*
+
+
+# ignore everything in assets
+assets/*
+
+# allow xray directory
+!assets/xray/
+assets/xray/xray*
+assets/xray/configs
+assets/xray/outbounds/*.json
+
+
+# allow example files
+!assets/xray/outbounds/*.example
+
+
+
+#settings
+settings/*.toml
+ips/*.csv
 

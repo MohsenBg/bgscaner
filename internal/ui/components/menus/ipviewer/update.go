@@ -36,7 +36,7 @@ func (m *Model) copySelectedIP() tea.Cmd {
 	}
 
 	if err := clipboard.WriteAll(row[0]); err != nil {
-		return m.errorCmd("Error Copying IP", fmt.Sprintf("%e", err))
+		return m.errorCmd("Error Copying IP", err.Error())
 	}
 	return m.infoCmd("IP Copied", fmt.Sprintf("IP copied to clipboard:%s", row[0]))
 }
