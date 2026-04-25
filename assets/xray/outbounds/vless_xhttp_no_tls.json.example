@@ -1,0 +1,27 @@
+{
+  "tag": "vless-xhttp-no-tls",
+  "protocol": "vless",
+  "settings": {
+    "vnext": [
+      {
+        "address": "$ADDRESS",
+        "port": 80,
+        "users": [
+          {
+            "id": "?",
+            "encryption": "none"
+          }
+        ]
+      }
+    ]
+  },
+  "streamSettings": {
+    "network": "xhttp",
+    "security": "none",
+    "xhttpSettings": {
+      "path": "?",
+      "host": ["?"],
+      "mode": "auto"
+    }
+  }
+}

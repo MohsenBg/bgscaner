@@ -2,8 +2,6 @@
 # Ignore all .txt files
 *.txt
 
-# But DO NOT ignore ips.txt
-!ips.txt
 
 # ------------------------------------
 # Go build files
@@ -70,3 +68,33 @@ out/
 
 # Windows
 Thumbs.db
+
+
+# project
+/[Tt]mp
+/[Ll]ogs
+/result
+
+
+__debug_bin*
+
+
+# ignore everything in assets
+assets/*
+
+# allow xray directory
+!assets/xray/
+assets/xray/xray*
+assets/xray/configs
+assets/xray/outbounds/*.json
+
+
+# allow example files
+!assets/xray/outbounds/*.example
+
+
+
+#settings
+settings/*.toml
+ips/*.csv
+

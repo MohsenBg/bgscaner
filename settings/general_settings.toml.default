@@ -1,0 +1,71 @@
+# =====================================================================
+# General Scanner Settings
+# =====================================================================
+
+# Interval (in milliseconds) for sending status updates to the UI.
+# This controls how often progress information is pushed.
+# Example: 1000 → update every 1 second.
+status_interval = 1000
+
+# Stop scanning after this many successful results.
+# A “successful result” means the target passed the scan conditions.
+#
+# Behavior:
+#   0   = disabled (scan all IPs)
+#   N   = stop after N successful hits
+#
+# NOTE:
+#   In chain-mode scanning, this limit ONLY applies to the FINAL STAGE.
+#   (Chain support for this limit is not implemented yet.)
+stop_after_found = 0
+
+# Maximum number of IPs to read from the input source.
+# Useful for sampling large IP lists or limiting heavy scans.
+#
+# Behavior:
+#   0   = no limit (read all IPs)
+#   N   = read at most N IPs
+max_ips_to_test = 0
+
+# Enable verbose logging for debugging.
+# When true, detailed internal events, worker activity,
+# and pipeline diagnostics are printed.
+verbose = true
+
+
+# =====================================================================
+# Chain Execution Mode
+# =====================================================================
+
+# chain_mode defines how multi-stage scanning is executed.
+#
+# Available modes:
+#
+#   "simple"   → Sequential, disk-based chain.
+#                Each stage waits for the previous one to finish.
+#                Lowest RAM usage, but slowest due to disk I/O.
+#
+#   "parallel" → All stages run simultaneously and stream IPs between
+#                stages using buffered channels. Highest throughput.
+#                Ideal for real-time scanning and large datasets.
+#
+#   "pipeline" → Batch-based hybrid model. IPs are processed in batches,
+#                and each batch goes through all stages sequentially.
+#                More predictable memory usage than "parallel".
+#                Good when stages have different performance costs.
+#
+# Example:
+#   chain_mode = "parallel"
+#
+# Default: "simple"
+chain_mode = "parallel"
+
+
+# Maximum number of tasks each stage can buffer in chain mode.
+# The capacity equals: worker_count * channel_buffer_multiple.
+# Example: if a stage has 30 workers and channel_buffer_multiple = 5,
+# the stage can hold up to 150 tasks from the previous stage.
+# When this limit is reached, the previous stage is blocked and must
+# wait until buffer space becomes available.
+channel_buffer_multiple = 5
+

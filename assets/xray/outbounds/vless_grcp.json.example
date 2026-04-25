@@ -1,0 +1,31 @@
+{
+  "tag": "vless-grpc",
+  "protocol": "vless",
+  "settings": {
+    "vnext": [
+      {
+        "address": "$ADDRESS",
+        "port": 443,
+        "users": [
+          {
+            "id": "?",
+            "encryption": "none"
+          }
+        ]
+      }
+    ]
+  },
+  "streamSettings": {
+    "network": "grpc",
+    "security": "tls",
+    "grpcSettings": {
+      "serviceName": "?"
+    },
+    "tlsSettings": {
+      "allowInsecure": false,
+      "serverName": "?",
+      "alpn": ["h2"],
+      "fingerprint": "firefox"
+    }
+  }
+}

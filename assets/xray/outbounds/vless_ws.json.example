@@ -1,0 +1,35 @@
+{
+  "tag": "proxy",
+  "protocol": "vless",
+  "settings": {
+    "vnext": [
+      {
+        "address": "$ADDRESS",
+        "port": 443,
+        "users": [
+          {
+            "id": "?",
+            "encryption": "none"
+          }
+        ]
+      }
+    ]
+  },
+  "streamSettings": {
+    "network": "ws",
+    "security": "tls",
+    "tlsSettings": {
+      "allowInsecure": false,
+      "serverName": "?",
+      "alpn": ["h2", "http/1.1"],
+      "fingerprint": "firefox"
+    },
+    "wsSettings": {
+      "path": "?",
+      "headers": {
+        "Host": "?"
+      }
+    }
+  }
+}
+
