@@ -193,6 +193,7 @@ func (s *Scanner) Run() {
 		panic("no stages added to Scanner")
 	}
 
+	s.pause.Start()
 	if len(s.stages) == 1 {
 		stg := s.stages[0]
 		s.runSingle(stg, stg.Hooks)
