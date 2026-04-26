@@ -201,6 +201,7 @@ func (s *Scanner) Run() {
 	}
 	s.runChain(s.stages)
 	s.pm.Close()
+	s.pause.Stop()
 }
 
 //
