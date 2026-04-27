@@ -78,30 +78,19 @@ Modern interactive terminal interface:
 
 ---
 
-## 📦 Installation
+# 📦 Installation
 
 ### Download from Releases
 
-Go to:
-
-```text
+```
 https://github.com/MohsenBg/bgscaner/releases
 ```
 
-Download the archive matching your platform:
-
-| OS               | Binary                                        |
-| ---------------- | --------------------------------------------- |
-| Linux            | `bgscan-linux-amd64` / `bgscan-linux-arm64`   |
-| Windows          | `bgscan-windows-amd64.exe`                    |
-| macOS            | `bgscan-darwin-amd64` / `bgscan-darwin-arm64` |
-| Android (Termux) | `bgscan-android-amd64`                        |
+Download the archive matching your platform.
 
 ---
 
 ## ▶️ Running bgscan
-
-After downloading a release archive:
 
 ### 1️⃣ Extract the archive
 
@@ -113,7 +102,7 @@ unzip bgscan-*.zip
 
 Windows:
 
-> Right click → **Extract All**
+Right click → **Extract All**
 
 ---
 
@@ -141,7 +130,27 @@ Windows (PowerShell):
 
 ---
 
-## ⚙️ Settings
+# 📚 Documentation
+
+Detailed documentation for **configuration files, scanning features, and integrations** is available in the `docs/` directory.
+
+Start here:
+
+
+[**Docs**](./docs/README.md)
+
+
+The documentation includes:
+
+- Configuration reference
+- Protocol settings
+- Writer system
+- Xray integration
+- Custom outbound configuration
+
+---
+
+# ⚙️ Settings
 
 All configuration files are located in the `settings/` directory:
 
@@ -156,21 +165,8 @@ settings/
 └── xray_settings.toml
 ```
 
-Edit these files to adjust **bgscan**’s behavior.
 
-Example:
-
-```bash
-nano settings/general_settings.toml
-# or
-vim settings/tcp_settings.toml
-```
-
-Changes are applied the next time `bgscan` runs.
-
----
-
-## 📂 Asset System
+# 📂 Asset System
 
 `bgscan` uses external runtime assets stored under `assets/`:
 
@@ -183,42 +179,15 @@ assets/
   slipstream-client/
 ```
 
-### Xray Outbounds
 
-Inside `assets/xray/outbounds/` you will find only `.example` templates packaged with the project.
 
-To add your own Xray outbound:
-
-1. Go to the outbound directory:
-
-   ```bash
-   cd assets/xray/outbounds
-   ```
-
-2. Copy an `.example` file to a `.json` file:
-
-   ```bash
-   cp vmess.example vmess.json
-   ```
-
-3. Edit the new `.json` file with your real outbound configuration:
-
-   ```bash
-   nano vmess.json
-   # or
-   vim vmess.json
-   ```
-
-4. `bgscan` automatically picks up `.json` outbound files at runtime.
-
-`*.example` files are **templates** –  
-you should always create and edit your own `.json` files instead of modifying the templates directly.
+`bgscan` automatically loads `.json` outbound files at runtime.
 
 ---
 
 # 🧠 Engine Architecture
 
-```text
+```
 CIDR Streamer
       ↓
    Stage Chain
@@ -234,16 +203,6 @@ CIDR Streamer
 
 ---
 
-## 🔹 Concurrency Model
-
-- Bounded worker pool
-- Context‑based cancellation
-- Graceful shutdown
-- Channel‑based streaming between stages
-- Safe, batched result flushing
-
----
-
 # 📊 Result System
 
 - Asynchronous writer
@@ -253,7 +212,7 @@ CIDR Streamer
 - Duplicate filtering
 - Structured output by protocol
 
-Supported result types include:
+Supported result types:
 
 - ICMP
 - TCP
@@ -262,7 +221,6 @@ Supported result types include:
 - DNSTT
 - Slipstream
 - Xray
-- Custom (reserved for future extensions)
 
 ---
 
@@ -276,7 +234,7 @@ Supported result types include:
 
 ---
 
-## Clone the Repository
+## Clone Repository
 
 ```bash
 git clone https://github.com/MohsenBg/bgscaner.git
@@ -285,234 +243,59 @@ cd bgscaner
 
 ---
 
-## Download Required Assets
-
-`bgscan` depends on external runtime binaries:
-
-- `xray`
-- `dnstt-client`
-- `slipstream-client`
-
-Download them from the official releases page or their upstream projects, then place them under `assets/` as described below.
-
----
-
-## 📂 Asset Directory Structure
-
-Place the binaries inside the `assets/` directory with the following structure:
-
-```text
-assets/
-  xray/
-    xray-linux-amd64/
-      xray
-    xray-darwin-arm64/
-      xray
-    ...
-  dnstt-client/
-    dnstt-client-linux-amd64/
-      dnstt-client
-    ...
-  slipstream-client/
-    slipstream-client-linux-amd64/
-      slipstream-client
-    ...
-```
-
-Folder names must follow:
-
-```text
-<name>-<GOOS>-<GOARCH>
-```
-
-Examples:
-
-```text
-xray-linux-amd64
-dnstt-client-windows-amd64
-slipstream-client-darwin-arm64
-```
-
-On Windows, the binary filename must end with `.exe`.
-
----
-
-## 🔨 Build
-
-### Build for Current Platform
+## Build
 
 ```bash
 ./build.sh
 ```
 
-The script will:
+Outputs will be generated in:
 
-- Detect your OS/ARCH
-- Verify required assets
-- Inject version info from Git
-- Copy settings and assets
-- Generate a SHA256 checksum
-- Write releases into:
-
-```text
+```
 dist/<version>/
 ```
 
 ---
 
-### Build for All Supported Targets
+# ❤️ Support the Project
 
-```bash
-./build.sh --all
-```
-
-⚠️ When using `--all`, you must provide assets for **every supported platform**:
-
-```text
-linux/amd64
-linux/arm64
-windows/amd64
-darwin/amd64
-darwin/arm64
-android/arm64
-```
-
-If any required binary is missing, the build fails with an error.
+If **bgscan** is useful for your work, consider supporting its development.
 
 ---
-
-## ✅ Output Example
-
-```text
-dist/
-  v1.0.0/
-    bgscan-linux-amd64/
-    bgscan-darwin-arm64/
-    bgscan-windows-amd64/
-    ...
-```
-
-Each platform folder contains:
-
-```text
-bgscan (or bgscan.exe)
-settings/
-assets/
-ips/
-<checksum file>
-```
-
----
-
-# 🏗 Project Structure
-
-```text
-.
-├── assets/                     # External runtime binaries + Xray configs
-│   ├── dnstt-client/
-│   ├── slipstream-client/
-│   └── xray/
-│       ├── configs/
-│       └── outbounds/
-│           ├── *.json          # User outbounds
-│           └── *.example       # Templates
-│
-├── cmd/
-│   └── bgscan/
-│       └── main.go             # Entry point
-│
-├── internal/
-│   ├── core/
-│   │   ├── config/             # TOML config loader + defaults
-│   │   ├── dns/                # DNS logic (DNSTT, Slipstream, resolvers)
-│   │   ├── filemanager/        # CSV/JSON/TXT loaders
-│   │   ├── ip/                 # IP utilities (parse/expand)
-│   │   ├── iplist/             # IP list registry + loaders
-│   │   ├── process/            # Cross‑platform process manager
-│   │   ├── result/             # Result writer / merger
-│   │   ├── scanner/            # Multi‑stage scanning engine
-│   │   └── xray/               # Xray outbound runner / wrapper
-│   │
-│   ├── logger/                 # Core logger + debug + UI logging
-│   ├── startup/                # Startup / health checks
-│   └── ui/                     # BubbleTea TUI
-│       ├── components/
-│       ├── menus/
-│       ├── scanner/
-│       ├── main/
-│       ├── shared/
-│       └── theme/
-│
-├── ips/                        # IP ranges + default templates
-│
-├── settings/                   # User‑editable TOML configs
-│   ├── dns_settings.toml
-│   ├── general_settings.toml
-│   ├── http_settings.toml
-│   ├── icmp_settings.toml
-│   ├── tcp_settings.toml
-│   ├── writer_settings.toml
-│   └── xray_settings.toml
-│   # *.default templates exist in source but are not shipped in releases
-│
-├── build.sh                    # Build script (single or multi‑platform)
-├── go.mod
-├── go.sum
-└── README.md
-```
-
----
-
-# 🔐 Safety & Legal Notice
-
-**bgscan** is intended for:
-
-- Security research
-- Educational use
-- Authorized infrastructure testing
-
-You are solely responsible for how you use this tool.  
-Do **not** scan systems you do not own or do not have explicit permission to test.
-
----
-
-# 💰 Support & Donation
-
-If this project is useful to you, consider supporting its development.
 
 ### 🟡 Bitcoin (BTC)
 
-```text
+```
 bc1q3c7cu36faxddjwc3h99k0vt82nj2m9t6u7tdfj
 ```
 
-### 🟢 USDT (BEP20 – BNB Smart Chain)
+### 🟢 USDT (BEP20)
 
-```text
+```
 0x2ea5A8558B4250cCBF147b2E2501B086700f184A
 ```
 
 ### 🟡 BNB (BEP20)
 
-```text
+```
 0x2ea5A8558B4250cCBF147b2E2501B086700f184A
 ```
 
 ### 🔵 Ethereum (ERC20)
 
-```text
+```
 0x2ea5A8558B4250cCBF147b2E2501B086700f184A
 ```
 
 ### 🔴 TRON (TRX)
 
-```text
+```
 TVxmGjLfyDL3ArbdWk9F8Za24EDm1CHMF4
 ```
 
 ### 🟣 TON
 
-```text
+```
 UQDpsu6VBCbl31-LLKcAX8CUCD6BHzzVoHoM2clFJBsct8rq
 ```
 
@@ -520,17 +303,16 @@ UQDpsu6VBCbl31-LLKcAX8CUCD6BHzzVoHoM2clFJBsct8rq
 
 # 🤝 Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
+1. Fork the repository  
+2. Create a feature branch  
+3. Commit your changes  
 4. Open a pull request
 
 Guidelines:
 
 - Write idiomatic Go
-- Add GoDoc for exported types and functions
-- Avoid decorative comments / banners
-- Keep concurrency safe and clearly documented
+- Add GoDoc for exported types
+- Keep concurrency safe and documented
 
 ---
 
@@ -542,4 +324,4 @@ Released under the **MIT License**.
 
 # 👨‍💻 Author
 
-eveloped and maintained by **MohsenBg**.
+Developed and maintained by **MohsenBg**
